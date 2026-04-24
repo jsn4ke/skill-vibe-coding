@@ -3,6 +3,7 @@ package aura
 import (
 	"fmt"
 	"skill-go/pkg/event"
+	"skill-go/pkg/script"
 	"skill-go/pkg/spell"
 	"time"
 )
@@ -81,6 +82,7 @@ type Aura struct {
 	IsAreaAura  bool
 	AreaCenter  [3]float64
 	AreaRadius  float64
+	SpellValues map[uint8]float64
 }
 
 type AuraEffect struct {
@@ -155,9 +157,10 @@ func (a *Aura) CalcAmount(effIdx int) float64 {
 }
 
 type Manager struct {
-	auras  map[uint64][]*Aura
-	nextID uint64
-	bus    *event.Bus
+	auras    map[uint64][]*Aura
+	nextID   uint64
+	bus      *event.Bus
+	registry *script.Registry
 }
 
 func NewManager(bus *event.Bus) *Manager {
@@ -165,6 +168,10 @@ func NewManager(bus *event.Bus) *Manager {
 		auras: make(map[uint64][]*Aura),
 		bus:   bus,
 	}
+}
+
+func (m *Manager) SetRegistry(reg *script.Registry) {
+	m.registry = reg
 }
 
 func (m *Manager) AddAura(aura *Aura) {
@@ -189,6 +196,15 @@ func (m *Manager) AddAura(aura *Aura) {
 
 	m.auras[aura.TargetID] = append(m.auras[aura.TargetID], aura)
 
+	if m.registry != nil {
+		m.registry.CallAuraHook(aura.SpellID, script.AuraHookAfterApply, &script.AuraContext{
+			SpellID:  aura.SpellID,
+			TargetID: aura.TargetID,
+			CasterID: aura.CasterID,
+			Aura:     aura,
+		})
+	}
+
 	if m.bus != nil {
 		m.bus.Publish(event.Event{
 			Type:     event.OnAuraApplied,
@@ -201,6 +217,15 @@ func (m *Manager) AddAura(aura *Aura) {
 }
 
 func (m *Manager) RemoveAura(aura *Aura, mode RemoveMode) {
+	if m.registry != nil {
+		m.registry.CallAuraHook(aura.SpellID, script.AuraHookAfterRemove, &script.AuraContext{
+			SpellID:    aura.SpellID,
+			TargetID:   aura.TargetID,
+			CasterID:   aura.CasterID,
+			RemoveMode: uint8(mode),
+			Aura:       aura,
+		})
+	}
 	list := m.auras[aura.TargetID]
 	for i, a := range list {
 		if a.ID == aura.ID {

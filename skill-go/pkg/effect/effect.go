@@ -3,6 +3,7 @@ package effect
 import (
 	"math/rand"
 	"skill-go/pkg/aura"
+	"skill-go/pkg/script"
 	"skill-go/pkg/spell"
 	"time"
 )
@@ -23,6 +24,8 @@ type Context struct {
 	Crit             bool
 	AppliedAura      *aura.Aura
 }
+
+var ScriptRegistry *script.Registry
 
 var handlers = map[spell.EffectType]EffectHandler{
 	spell.EffectSchoolDamage: handleSchoolDamage,
@@ -70,6 +73,13 @@ func ProcessAll(s *spell.Spell, mode spell.EffectHandleMode) {
 				Mode:             mode,
 				CasterSpellPower: sp,
 				Crit:             ti.Crit,
+			}
+			if ScriptRegistry != nil && ScriptRegistry.HasSpellHook(s.ID, script.HookOnEffectHit) {
+				spellCtx := &script.SpellContext{Spell: s, EffectIndex: ei.EffectIndex}
+				ScriptRegistry.CallSpellHook(s.ID, script.HookOnEffectHit, spellCtx)
+				if spellCtx.PreventDefault {
+					continue
+				}
 			}
 			Process(ctx)
 			ti.Damage += ctx.FinalDamage

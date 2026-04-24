@@ -32,20 +32,23 @@ const (
 )
 
 type SpellContext struct {
-	Spell        *spell.Spell
+	Spell          *spell.Spell
 	PreventDefault bool
+	EffectIndex    uint8
 }
 
 type HandlerFunc func(ctx *SpellContext)
 
 type AuraContext struct {
-	SpellID      spell.SpellID
-	TargetID     uint64
-	CasterID     uint64
-	StackAmount  uint8
-	EffectIndex  uint8
-	Amount       float64
+	SpellID        spell.SpellID
+	TargetID       uint64
+	CasterID       uint64
+	StackAmount    uint8
+	EffectIndex    uint8
+	Amount         float64
 	PreventDefault bool
+	RemoveMode     uint8
+	Aura           interface{}
 }
 
 type AuraHandlerFunc func(ctx *AuraContext)

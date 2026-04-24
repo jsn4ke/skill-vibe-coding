@@ -67,6 +67,10 @@ const (
 
 type CancelHook func()
 
+type AoESelector interface {
+	SelectAoETargets(center [3]float64, excludeID uint64) []uint64
+}
+
 type TargetInfo struct {
 	TargetID     uint64
 	MissReason   HitResult
@@ -88,8 +92,12 @@ type Spell struct {
 	HitTimer    int32
 	Result      SpellCastResult
 	TargetInfos []TargetInfo
-	Bus         *event.Bus
-	OnCancel    CancelHook
+	Bus            *event.Bus
+	OnCancel       CancelHook
+	SpellValues    map[uint8]float64
+	AoESelector    AoESelector
+	AoECenter      [3]float64
+	AoEExcludeID   uint64
 }
 
 type Caster interface {
@@ -319,7 +327,31 @@ func (s *Spell) CheckCast(strict bool) SpellCastResult {
 
 func (s *Spell) SelectTargets() {
 	s.TargetInfos = nil
-	if s.Targets.UnitTargetID != 0 {
+
+	// Check if any effect uses area targeting
+	hasAreaTarget := false
+	if s.Info != nil {
+		for i := range s.Info.Effects {
+			t := s.Info.Effects[i].TargetA
+			if t == TargetUnitAreaEnemy || t == TargetUnitAreaAlly || t == TargetUnitConeEnemy || t == TargetUnitChainEnemy || t == TargetUnitChainAlly {
+				hasAreaTarget = true
+				break
+			}
+		}
+	}
+
+	if hasAreaTarget && s.AoESelector != nil {
+		targets := s.AoESelector.SelectAoETargets(s.AoECenter, s.AoEExcludeID)
+		for _, tid := range targets {
+			s.TargetInfos = append(s.TargetInfos, TargetInfo{
+				TargetID:    tid,
+				MissReason:  HitNormal,
+				EfffectMask: 0xFF,
+			})
+		}
+	}
+
+	if s.Targets.UnitTargetID != 0 && !hasAreaTarget {
 		s.TargetInfos = append(s.TargetInfos, TargetInfo{
 			TargetID:    s.Targets.UnitTargetID,
 			MissReason:  HitNormal,
