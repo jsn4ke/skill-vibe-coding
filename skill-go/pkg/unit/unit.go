@@ -92,7 +92,18 @@ func (u *Unit) GetTargetPosition(targetID uint64) spell.Position {
 	return &entityPos{u.Entity.Pos}
 }
 func (u *Unit) ModifyPower(pt uint8, amount float64) bool {
-	// TODO: implement power modification through stat system
+	// Map TC power types to stat types.
+	// TC: 0=mana, 1=rage, 2=focus, 3=energy, etc.
+	// Our stat: 0=health, 1=mana, ...
+	var st stat.StatType
+	switch pt {
+	case 0: // PowerMana
+		st = stat.Mana
+	default:
+		st = stat.StatType(pt)
+	}
+	cur := u.Stats.Get(st)
+	u.Stats.SetBase(st, cur+amount)
 	return true
 }
 
@@ -257,13 +268,17 @@ func (u *Unit) tickSingleAura(a *aura.Aura, elapsed time.Duration, sp float64, b
 			eff.TicksDone++
 			amount := eff.Amount + eff.BonusCoeff*sp
 			if bus != nil {
+				tickExtra := map[string]any{"spellName": a.SpellName}
+				if eff.AuraType == aura.AuraPeriodicTriggerSpell && eff.TriggerSpellID != 0 {
+					tickExtra["triggerSpellID"] = uint32(eff.TriggerSpellID)
+				}
 				bus.Publish(event.Event{
 					Type:     event.OnAuraTick,
 					SourceID: a.CasterID,
 					TargetID: a.TargetID,
 					SpellID:  uint32(a.SpellID),
 					Value:    amount,
-					Extra:    map[string]any{"spellName": a.SpellName},
+					Extra:    tickExtra,
 				})
 			}
 			_ = amount // TODO: apply damage/heal via combat system

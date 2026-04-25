@@ -84,6 +84,9 @@ func ProcessAll(s *spell.Spell, mode spell.EffectHandleMode) {
 			Process(ctx)
 			ti.Damage += ctx.FinalDamage
 			ti.Healing += ctx.FinalHeal
+			if ctx.AppliedAura != nil && s.OnAuraCreated != nil {
+				s.OnAuraCreated(ctx.AppliedAura)
+			}
 		}
 	}
 }
@@ -135,6 +138,12 @@ func handleApplyAura(ctx *Context) {
 	a := aura.NewAura(spellInfo.ID, ctx.CasterID, ctx.TargetID, auraType, duration)
 	a.MaxStack = 1
 	a.StackRule = aura.StackRefresh
+	a.SpellName = spellInfo.Name
+
+	// Copy SpellValues from spell to aura (used by Living Bomb etc.)
+	if ctx.Spell.SpellValues != nil {
+		a.SpellValues = ctx.Spell.SpellValues
+	}
 
 	if ei.AuraPeriod > 0 {
 		a.Effects = append(a.Effects, aura.AuraEffect{

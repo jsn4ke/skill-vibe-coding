@@ -67,6 +67,10 @@ const (
 
 type CancelHook func()
 
+// AuraCreatedFunc is called by the effect pipeline when an aura is created.
+// Uses interface{} to avoid importing aura package.
+type AuraCreatedFunc func(a interface{})
+
 type AoESelector interface {
 	SelectAoETargets(center [3]float64, excludeID uint64) []uint64
 }
@@ -94,6 +98,7 @@ type Spell struct {
 	TargetInfos []TargetInfo
 	Bus            *event.Bus
 	OnCancel       CancelHook
+	OnAuraCreated  AuraCreatedFunc
 	SpellValues    map[uint8]float64
 	AoESelector    AoESelector
 	AoECenter      [3]float64
@@ -227,12 +232,18 @@ func (s *Spell) Cast(skipCheck bool) {
 		if len(s.TargetInfos) > 0 {
 			targetID = s.TargetInfos[0].TargetID
 		}
+		launchExtra := map[string]any{"speed": s.Info.Speed, "spellName": s.Info.Name}
+		if s.Targets.DestPos != [3]float64{} {
+			launchExtra["destX"] = s.Targets.DestPos[0]
+			launchExtra["destY"] = s.Targets.DestPos[1]
+			launchExtra["destZ"] = s.Targets.DestPos[2]
+		}
 		s.Bus.Publish(event.Event{
 			Type:     event.OnSpellLaunch,
 			SourceID: s.Caster.GetID(),
 			TargetID: targetID,
 			SpellID:  uint32(s.ID),
-			Extra:    map[string]any{"speed": s.Info.Speed, "spellName": s.Info.Name},
+			Extra:    launchExtra,
 		})
 	}
 

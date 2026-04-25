@@ -6,11 +6,13 @@ When implementing or designing game skill/mechanism systems in this project, ref
 
 **The core architecture MUST be consistent with TrinityCore, not simplified or lightweighted.** These are non-negotiable design constraints:
 
-1. **Unit-centric Update driving** — Unit holds active spells and applied/owned auras; Engine.Tick drives all Units uniformly. No component drives itself internally.
+1. **Unit-centric Update driving** — `Engine.Advance(diffMs)` → `Unit.Update(diff)` → `updateSpells(diff)` + `updateAuras(diff)`. Engine is the sole time driver. No component drives itself internally.
 2. **Owned vs Applied aura separation** — Caster owns the aura (drives ticks, handles expiry), target has it applied (receives effects). These are two distinct container roles on two different Units.
 3. **Instant same-frame / Non-instant via Update chain** — Instant and triggered spells execute synchronously within the current frame. Spells with cast time or travel time register into the Unit's active spell list and are driven by Update(diff).
-4. **Spell lifecycle: create → register → Update-driven** — CastSpell creates a Spell and registers it; it does NOT self-drive by calling Update internally. The engine is the sole driver of time progression.
-5. **Dummy effect + Script Hook pattern** — EffectDummy provides a hook mount point with no built-in behavior. Scripts intercept via HookOnEffectHit and supply custom logic. No shortcutting this pattern with "just call a function."
+4. **Spell lifecycle: create → register → Update-driven** — `Engine.CastSpell()` creates a Spell and registers it on the caster; it does NOT self-drive by calling Update internally. The engine is the sole driver of time progression.
+5. **Dummy effect + Script Hook pattern** — EffectDummy provides a hook mount point with no built-in behavior. Scripts intercept via `RegisterScripts` → `HookOnEffectHit` and supply custom logic. No shortcutting this pattern with "just call a function."
+6. **OnAuraCreated auto-registration** — When the effect pipeline creates an aura (EffectApplyAura), the spell's `OnAuraCreated` callback fires, which the engine wires to `AuraMgr.ApplyAura()`. Skills never manually create auras.
+7. **RegisterScripts for complex skills** — Skills with channeled mechanics, spread, or triggered sub-spells expose `RegisterScripts(registry, caster, eng, ...)` that sets up bus listeners (`OnSpellLaunch`, `OnSpellCancel`, `OnAuraTick`) and script hooks (`OnEffectHit`, `AfterRemove`). Simple skills (pure instant + effect pipeline) need no RegisterScripts.
 
 **Why:** Simplifying these patterns creates technical debt. Every shortcut taken now (flat global aura manager, Cast functions self-driving Update, no owned/applied separation) will need to be refactored later when more complex skills require the full architecture.
 

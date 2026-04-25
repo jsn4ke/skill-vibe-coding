@@ -3,12 +3,10 @@ package livingbomb
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"skill-go/pkg/aura"
 	"skill-go/pkg/engine"
 	"skill-go/pkg/entity"
-	"skill-go/pkg/spell"
 	"skill-go/pkg/stat"
 )
 
@@ -27,63 +25,59 @@ func (s *engineAoESelector) SelectAoETargets(center [3]float64, excludeID uint64
 	return ids
 }
 
-// runLivingBombEngineTimeline runs the Living Bomb simulation using the engine-driven approach.
-// The AfterRemove hook fires via engine's updateAuras → RemoveAuraFromHosts → script registry.
+// runLivingBombEngineTimeline runs the full Living Bomb simulation via engine.
+// All spells cast through engine.CastSpell, auras auto-created by hooks + effect pipeline.
 func runLivingBombEngineTimeline() string {
 	eng := engine.New()
 
-	// Create caster
-	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: 0}), stat.NewStatSet())
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: -20}), stat.NewStatSet())
 	caster.Stats.SetBase(stat.SpellPower, 100)
 	caster.Stats.SetBase(stat.Mana, 1000)
 
-	// Create target (bomb carrier) at (10,0,0)
+	// Bomb carrier at (10,0,0)
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
-	// Create 2 nearby enemies for explosion AoE
+	// 2 nearby enemies for explosion AoE
 	eng.AddUnitWithID(3, entity.NewEntity(3, entity.TypeCreature, entity.Position{X: 8}), stat.NewStatSet())
 	eng.AddUnitWithID(4, entity.NewEntity(4, entity.TypeCreature, entity.Position{X: 12, Y: 1}), stat.NewStatSet())
 
-	// Register Living Bomb scripts with engine's subsystems
+	// Register hooks
 	selector := &engineAoESelector{eng: eng, radius: 8}
-	RegisterScripts(eng.Registry(), caster, eng.AuraMgr(), eng.Bus(), selector)
+	RegisterScripts(eng.Registry(), caster, eng, selector)
 
-	// Cast Living Bomb on target — instant spell (Path B)
+	// Cast Living Bomb — instant spell, hooks create the periodic aura automatically
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 
-	// Manually create DoT aura via ApplyAura (engine-driven path).
-	// The legacy castPeriodicSpell uses auraMgr.AddAura (legacy map),
-	// so we create the aura directly for engine integration.
-	ei := &PeriodicInfo.Effects[0]
-	target := eng.GetUnit(2)
-	a := aura.NewAura(spell.SpellID(PeriodicInfo.ID), caster.ID(), target.ID(), aura.AuraPeriodicDamage, 4*time.Second)
-	a.MaxStack = 1
-	a.StackRule = aura.StackRefresh
-	a.SpellName = PeriodicInfo.Name
-	a.SpellValues = map[uint8]float64{2: 1} // canSpread = true
-	a.Effects = []aura.AuraEffect{
-		{EffectIndex: 0, AuraType: aura.AuraPeriodicDamage, BonusCoeff: ei.BonusCoeff, Period: 1e9},
-	}
-	eng.AuraMgr().ApplyAura(caster, target, a)
-
-	// Drive until aura expires (4s DoT + explosion event)
-	for i := 0; i < 200; i++ {
-		eng.Advance(100)
-		if len(caster.GetOwnedAuras()) == 0 {
-			break
-		}
-	}
+	// Drive until first bomb's aura expires + explosion (5000ms covers 4s DoT + 1s buffer)
+	eng.Simulate(5000, 100)
 
 	return eng.Renderer().Render()
+}
+
+func TestLivingBomb_EngineSpellInfoFields(t *testing.T) {
+	if Info.ID != 44457 {
+		t.Errorf("expected Info.ID=44457, got %d", Info.ID)
+	}
+	if PeriodicInfo.ID != 217694 {
+		t.Errorf("expected PeriodicInfo.ID=217694, got %d", PeriodicInfo.ID)
+	}
+	if ExplosionInfo.ID != 44461 {
+		t.Errorf("expected ExplosionInfo.ID=44461, got %d", ExplosionInfo.ID)
+	}
 }
 
 func TestLivingBomb_EngineDotTicks(t *testing.T) {
 	output := runLivingBombEngineTimeline()
 
-	// DoT should tick 4 times (4s / 1s period)
-	count := strings.Count(output, "AuraTick")
+	// Count only the original bomb's ticks (target 2)
+	count := 0
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "AuraTick") && strings.Contains(line, "Unit1→Unit2") {
+			count++
+		}
+	}
 	if count != 4 {
-		t.Errorf("expected 4 AuraTick events, got %d\nFull output:\n%s", count, output)
+		t.Errorf("expected 4 AuraTick events on original target, got %d\nFull output:\n%s", count, output)
 	}
 }
 
@@ -98,7 +92,6 @@ func TestLivingBomb_EngineAuraExpiry(t *testing.T) {
 func TestLivingBomb_EngineExplosionTriggers(t *testing.T) {
 	output := runLivingBombEngineTimeline()
 
-	// After aura expires, the AfterRemove hook should trigger the explosion spell
 	if !strings.Contains(output, "Living Bomb Explode") {
 		t.Errorf("expected Living Bomb Explode event after aura expiry\nFull output:\n%s", output)
 	}
@@ -107,10 +100,121 @@ func TestLivingBomb_EngineExplosionTriggers(t *testing.T) {
 func TestLivingBomb_EngineExplosionHitsAoETargets(t *testing.T) {
 	output := runLivingBombEngineTimeline()
 
-	// The explosion should hit the 2 nearby enemies (units 3 and 4)
 	explodeHitCount := strings.Count(output, "Living Bomb Explode")
 	if explodeHitCount < 1 {
 		t.Errorf("expected at least 1 Living Bomb Explode event, got %d\nFull output:\n%s", explodeHitCount, output)
+	}
+}
+
+func TestLivingBomb_EngineSpreadToNearbyTargets(t *testing.T) {
+	eng := engine.New()
+
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: -20}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+
+	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 5}), stat.NewStatSet())
+	eng.AddUnitWithID(3, entity.NewEntity(3, entity.TypeCreature, entity.Position{X: 8}), stat.NewStatSet())
+	eng.AddUnitWithID(4, entity.NewEntity(4, entity.TypeCreature, entity.Position{X: 12}), stat.NewStatSet())
+
+	selector := &engineAoESelector{eng: eng, radius: 8}
+	RegisterScripts(eng.Registry(), caster, eng, selector)
+
+	eng.CastSpell(caster, &Info, engine.WithTarget(2))
+
+	// Drive until bomb explodes
+	eng.Simulate(8000, 100)
+
+	// Check that spread auras were created on targets 3 and 4
+	spreadCount := strings.Count(eng.Renderer().Render(), "AuraApplied")
+	if spreadCount < 3 { // Original + 2 spread
+		t.Errorf("expected at least 3 AuraApplied events (original + 2 spread), got %d\n%s", spreadCount, eng.Renderer().Render())
+	}
+}
+
+func TestLivingBomb_EngineSpreadChainTerminates(t *testing.T) {
+	eng := engine.New()
+
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: -20}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+
+	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 5}), stat.NewStatSet())
+	eng.AddUnitWithID(3, entity.NewEntity(3, entity.TypeCreature, entity.Position{X: 8}), stat.NewStatSet())
+
+	selector := &engineAoESelector{eng: eng, radius: 8}
+	RegisterScripts(eng.Registry(), caster, eng, selector)
+
+	eng.CastSpell(caster, &Info, engine.WithTarget(2))
+
+	// Drive through first explosion + second expiry
+	eng.Simulate(16000, 100)
+
+	output := eng.Renderer().Render()
+	auraAppliedCount := strings.Count(output, "AuraApplied")
+	// Should have original (target2) + spread (target3) = 2 auras total
+	// The spread copy has canSpread=0, so its explosion should NOT create new auras
+	if auraAppliedCount != 2 {
+		t.Errorf("expected exactly 2 AuraApplied events (no chain), got %d\nFull output:\n%s", auraAppliedCount, output)
+	}
+}
+
+func TestLivingBomb_EngineNoExplosionOnDispel(t *testing.T) {
+	eng := engine.New()
+
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: -20}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+
+	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
+
+	selector := &engineAoESelector{eng: eng, radius: 8}
+	RegisterScripts(eng.Registry(), caster, eng, selector)
+
+	eng.CastSpell(caster, &Info, engine.WithTarget(2))
+
+	// Drive a bit to get aura established
+	eng.Simulate(500, 100)
+
+	// Manually dispel the aura
+	if len(caster.GetOwnedAuras()) == 0 {
+		t.Fatal("expected aura to exist")
+	}
+	a := caster.GetOwnedAuras()[0]
+	target := eng.GetUnit(a.TargetID)
+	eng.AuraMgr().RemoveAuraFromHosts(a, caster, target, aura.RemoveByDispel)
+
+	output := eng.Renderer().Render()
+	if strings.Contains(output, "Living Bomb Explode") {
+		t.Error("explosion should NOT trigger on dispel")
+	}
+}
+
+func TestLivingBomb_EngineNoExplosionOnDeath(t *testing.T) {
+	eng := engine.New()
+
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: -20}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+
+	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
+
+	selector := &engineAoESelector{eng: eng, radius: 8}
+	RegisterScripts(eng.Registry(), caster, eng, selector)
+
+	eng.CastSpell(caster, &Info, engine.WithTarget(2))
+	eng.Simulate(500, 100)
+
+	if len(caster.GetOwnedAuras()) == 0 {
+		t.Fatal("expected aura to exist")
+	}
+	a := caster.GetOwnedAuras()[0]
+	target := eng.GetUnit(a.TargetID)
+	eng.AuraMgr().RemoveAuraFromHosts(a, caster, target, aura.RemoveByDeath)
+
+	output := eng.Renderer().Render()
+	if strings.Contains(output, "Living Bomb Explode") {
+		t.Error("explosion should NOT trigger on death")
 	}
 }
 

@@ -1,6 +1,6 @@
 # Skill Test Rule
 
-Every implemented skill must live in `skill-go/skills/<name>/` and have a corresponding `<skill>_test.go` that passes.
+Every implemented skill must live in `skill-go/skills/<name>/` and have a corresponding `<skill>_engine_test.go` that passes.
 
 ## Trigger
 
@@ -9,7 +9,7 @@ This rule activates when implementing, designing, or building game skills.
 ## Behavior
 
 1. **Skill location**: All new skills must be implemented in `skill-go/skills/<name>/`, not in `server/main.go` or other packages
-2. **Check for `<skill>_test.go`**: Every skill package must have a test file
+2. **Check for `<skill>_engine_test.go`**: Every skill package must have an engine test file
 3. **Run tests**: After any skill implementation, run:
    ```bash
    go test ./skills/...
@@ -18,52 +18,59 @@ This rule activates when implementing, designing, or building game skills.
 
 ## Required Test Coverage
 
-Each skill test should cover at minimum:
-- Full cast lifecycle (prepare → cast → hit)
+Each skill engine test should cover at minimum:
+- Full cast lifecycle via `eng.CastSpell()` + `eng.Simulate()`
 - Resource consumption (mana/energy cost)
 - Effect results (damage, healing, aura application)
 - Cancel/interrupt behavior where applicable
+- Spread/chain behavior for skills with AoE mechanics
 
-## Timeline Verification
+## Engine Test Pattern
 
-Every skill must have a `<skill>_timeline_test.go` that verifies the event timeline independently from `server/main.go`.
+All skill tests use the engine-driven architecture:
 
-**Rules:**
-1. **`server/main.go` is NOT the place for skill simulation logic** — it is infrastructure bootstrap only
-2. Each skill package must include `<skill>_timeline_test.go` that:
-   - Sets up its own `event.Bus`, `aura.Manager`, `timeline.TimelineRenderer`
-   - Runs the simulation loop with its own `simMs` starting from 0
-   - Asserts expected events (SpellCastStart, SpellHit, AuraTick, AuraExpired, etc.)
-   - Asserts tick counts, damage values, and event ordering
-3. Use `t.Log("\n" + output)` in a dedicated test to allow `go test -v` to print the full timeline
+1. Create engine: `eng := engine.New()`
+2. Add units: `eng.AddUnitWithID(id, entity, stats)`
+3. Register hooks: `RegisterScripts(eng.Registry(), caster, eng, ...)` if the skill has script hooks
+4. Cast spell: `eng.CastSpell(caster, &Info, engine.WithTarget(id), ...)`
+5. Drive simulation: `eng.Simulate(totalMs, stepMs)`
+6. Assert on `eng.Renderer().Render()` output
 
-**CRITICAL: `renderer.SetTime()` must be called inside every simulation step.** If `SetTime()` is not called, all events record at 0ms — this is the #1 timeline bug. Every `AuraMgr.TickPeriodic` / `TickPeriodicArea` call MUST be preceded by `renderer.SetTime(time.Duration(simMs) * time.Millisecond)`. Do NOT extract tick helpers that skip `SetTime`.
-
-**Timeline test structure:**
+**Engine test structure:**
 ```go
-func runXxxTimeline() string {
-    // 1. Create caster, targets, bus, auraMgr, renderer
-    // 2. Cast spell (via CastXxx or manually)
-    // 3. Simulation loop:
-    //    for simMs := int32(0); simMs < totalMs; simMs += stepMs {
-    //        renderer.SetTime(time.Duration(simMs) * time.Millisecond)  // <-- MANDATORY
-    //        auraMgr.TickPeriodic(...)
-    //    }
-    // 4. Return renderer.Render()
+func runXxxEngineTimeline() string {
+    eng := engine.New()
+    caster := eng.AddUnitWithID(1, entity.NewEntity(...), stat.NewStatSet())
+    caster.Stats.SetBase(stat.SpellPower, 100)
+    eng.AddUnitWithID(2, entity.NewEntity(...), stat.NewStatSet())
+
+    RegisterScripts(eng.Registry(), caster, eng, ...)  // if needed
+
+    eng.CastSpell(caster, &Info, engine.WithTarget(2))
+    eng.Simulate(5000, 100)
+    return eng.Renderer().Render()
 }
 ```
 
-**Verification checklist before marking timeline complete:**
-- [ ] Tick events show increasing time values (NOT all 0ms)
+**Verification checklist before marking test complete:**
+- [ ] Timeline events show increasing time values (NOT all 0ms)
 - [ ] Tick intervals match the spell's AuraPeriod
 - [ ] Expiry/Spread events occur at correct times relative to ticks
+- [ ] `t.Log("\n" + output)` in a dedicated test for verbose timeline output
 
 ## Skill Package Structure
 
 ```
 skill-go/skills/
   <name>/
-    <name>.go                # SpellInfo definition + CastXxx function
-    <name>_test.go           # Skill-level unit tests
-    <name>_timeline_test.go  # Timeline/event verification tests
+    <name>.go                # SpellInfo definition + RegisterScripts (if needed)
+    <name>_engine_test.go    # Engine-driven tests (all test coverage in one file)
 ```
+
+## Forbidden Patterns
+
+- **No `CastXxx` functions** — All casting goes through `eng.CastSpell(caster, &Info, ...)`
+- **No manual `renderer.SetTime()` loops** — `eng.Simulate()` handles time progression
+- **No `AuraMgr.TickPeriodic()` calls** — Engine drives aura ticks through `Unit.Update()`
+- **No `testUnit`/`testPos` mocks** — Use `eng.AddUnitWithID()` with real entities
+- **No separate `<skill>_timeline_test.go`** — Timeline verification is part of the engine test file

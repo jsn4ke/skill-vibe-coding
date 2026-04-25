@@ -5,6 +5,7 @@ import (
 	"math"
 	"skill-go/pkg/aura"
 	"skill-go/pkg/cooldown"
+	"skill-go/pkg/effect"
 	"skill-go/pkg/entity"
 	"skill-go/pkg/event"
 	"skill-go/pkg/script"
@@ -15,7 +16,8 @@ import (
 	"time"
 )
 
-// Engine is the unified simulation driver, aligned with TC's Map class.
+// Ensure effect handlers are registered (effect.init sets spell.ProcessEffectsFn)
+
 // It is the sole driver of time progression via Tick(diff).
 // Reference: tc-references/unit-update-architecture.md
 type Engine struct {
@@ -38,6 +40,9 @@ func New() *Engine {
 	reg := script.NewRegistry()
 	auraMgr := aura.NewManager(bus)
 	auraMgr.SetRegistry(reg)
+
+	// Wire effect pipeline to use the engine's script registry
+	effect.ScriptRegistry = reg
 
 	r := timeline.NewRenderer()
 	r.SubscribeAll(bus)
@@ -200,6 +205,16 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 
 	s := spell.NewSpell(spell.SpellID(info.ID), info, caster, flags)
 	s.Bus = e.bus
+
+	// Wire OnAuraCreated so the effect pipeline can register auras automatically
+	s.OnAuraCreated = func(a interface{}) {
+		aura := a.(*aura.Aura)
+		owner := e.GetUnit(aura.CasterID)
+		target := e.GetUnit(aura.TargetID)
+		if owner != nil && target != nil {
+			e.auraMgr.ApplyAura(owner, target, aura)
+		}
+	}
 
 	if cfg.targetID != 0 {
 		s.Targets.UnitTargetID = cfg.targetID
