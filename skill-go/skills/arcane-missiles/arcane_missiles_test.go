@@ -185,8 +185,12 @@ func TestMissileDamageWithSP(t *testing.T) {
 		}
 	})
 
-	// Tick once (first tick at period=1s, per TC behavior)
-	auraMgr.TickPeriodic(2, 1*time.Second, caster.GetStatValue(3),
+	// Find the aura and tick it directly
+	a := auraMgr.FindAura(2, spell.SpellID(Info.ID), caster.GetID())
+	if a == nil {
+		t.Fatal("expected aura")
+	}
+	a.Tick(1*time.Second, caster.GetStatValue(3), bus,
 		func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {
 			CastTriggeredSpell(caster, a.TargetID, &MissileInfo, bus)
 		})
@@ -214,8 +218,12 @@ func TestThreeMissilesFired(t *testing.T) {
 		}
 	})
 
+	a := auraMgr.FindAura(2, spell.SpellID(Info.ID), caster.GetID())
+	if a == nil {
+		t.Fatal("expected aura")
+	}
 	for i := 0; i < 3; i++ {
-		auraMgr.TickPeriodic(2, 1*time.Second, caster.GetStatValue(3),
+		a.Tick(1*time.Second, caster.GetStatValue(3), bus,
 			func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {
 				CastTriggeredSpell(caster, a.TargetID, &MissileInfo, bus)
 			})
@@ -280,7 +288,11 @@ func TestCancelAfterOneTick(t *testing.T) {
 	})
 
 	// Tick once
-	auraMgr.TickPeriodic(2, 1*time.Second, caster.GetStatValue(3),
+	a := auraMgr.FindAura(2, spell.SpellID(Info.ID), caster.GetID())
+	if a == nil {
+		t.Fatal("expected aura")
+	}
+	a.Tick(1*time.Second, caster.GetStatValue(3), bus,
 		func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {
 			CastTriggeredSpell(caster, a.TargetID, &MissileInfo, bus)
 		})
@@ -292,12 +304,15 @@ func TestCancelAfterOneTick(t *testing.T) {
 	// Cancel channel
 	s.Cancel()
 
-	// Try to tick again - aura should be gone, no more hits
+	// Try to tick again - aura should be gone
 	hitCount = 0
-	auraMgr.TickPeriodic(2, 1*time.Second, caster.GetStatValue(3),
-		func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {
-			CastTriggeredSpell(caster, a.TargetID, &MissileInfo, bus)
-		})
+	a2 := auraMgr.FindAura(2, spell.SpellID(Info.ID), caster.GetID())
+	if a2 != nil {
+		a2.Tick(1*time.Second, caster.GetStatValue(3), bus,
+			func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {
+				CastTriggeredSpell(caster, a.TargetID, &MissileInfo, bus)
+			})
+	}
 
 	if hitCount != 0 {
 		t.Errorf("expected 0 hits after cancel, got %d", hitCount)

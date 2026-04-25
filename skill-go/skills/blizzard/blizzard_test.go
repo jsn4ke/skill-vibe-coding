@@ -6,10 +6,8 @@ import (
 	"time"
 
 	"skill-go/pkg/aura"
-	"skill-go/pkg/entity"
 	"skill-go/pkg/spell"
 	"skill-go/pkg/stat"
-	"skill-go/pkg/targeting"
 )
 
 type testUnit struct {
@@ -34,12 +32,6 @@ func (u *testUnit) ModifyPower(pt uint8, amount float64) bool {
 	}
 	return true
 }
-func (u *testUnit) GetEntity() *entity.Entity {
-	return &entity.Entity{ID: entity.EntityID(u.id), Type: entity.TypePlayer, Pos: entity.Position{X: u.pos.x, Y: u.pos.y, Z: u.pos.z}}
-}
-func (u *testUnit) casterEntity() *entity.Entity {
-	return u.GetEntity()
-}
 
 type testPos struct{ x, y, z, facing float64 }
 
@@ -48,44 +40,11 @@ func (p *testPos) GetY() float64      { return p.y }
 func (p *testPos) GetZ() float64      { return p.z }
 func (p *testPos) GetFacing() float64 { return p.facing }
 
-type enemyUnit struct {
-	id    uint64
-	alive bool
-	pos   testPos
-}
-
-func (e *enemyUnit) GetEntity() *entity.Entity {
-	return &entity.Entity{ID: entity.EntityID(e.id), Type: entity.TypeCreature, Pos: entity.Position{X: e.pos.x, Y: e.pos.y, Z: e.pos.z}}
-}
-func (e *enemyUnit) IsAlive() bool { return e.alive }
-
 func newTestCaster(id uint64, x float64) *testUnit {
 	u := &testUnit{id: id, alive: true, stats: stat.NewStatSet(), pos: testPos{x: x}}
 	u.stats.SetBase(stat.SpellPower, 100)
 	u.stats.SetBase(stat.Mana, 1000)
 	return u
-}
-
-func newTestEnemy(id uint64, x, y float64) *enemyUnit {
-	return &enemyUnit{id: id, alive: true, pos: testPos{x: x, y: y}}
-}
-
-func resolveTargets(auraMgr *aura.Manager, caster *testUnit, targets []targeting.Targetable) func() []uint64 {
-	return func() []uint64 {
-		a := auraMgr.FindAreaAura(caster.id, spell.SpellID(Info.ID))
-		if a == nil {
-			return nil
-		}
-		sel := targeting.NewSelector(targets)
-		desc := targeting.Descriptor{Selection: targeting.SelectArea, Check: targeting.CheckEnemy, Radius: a.AreaRadius}
-		center := entity.Position{X: a.AreaCenter[0], Y: a.AreaCenter[1], Z: a.AreaCenter[2]}
-		selected := sel.SelectAroundPoint(caster.casterEntity(), center, targets, desc, 0)
-		var ids []uint64
-		for _, e := range selected {
-			ids = append(ids, uint64(e.ID))
-		}
-		return ids
-	}
 }
 
 func TestBlizzard_CastLifecycle(t *testing.T) {
@@ -152,16 +111,18 @@ func TestBlizzard_AuraApplied(t *testing.T) {
 
 func TestBlizzard_PeriodicDamageWithSP(t *testing.T) {
 	caster := newTestCaster(1, 0)
-	enemy := newTestEnemy(2, 10, 0)
 	auraMgr := aura.NewManager(nil)
 
 	CastBlizzard(caster, 10, 0, 0, auraMgr, nil)
 
-	targets := []targeting.Targetable{enemy}
+	a := auraMgr.FindAreaAura(1, spell.SpellID(Info.ID))
+	if a == nil {
+		t.Fatal("expected area aura")
+	}
+
 	var tickDamage float64
 	var tickTargetID uint64
-
-	auraMgr.TickPeriodicArea(1*time.Second, 100, resolveTargets(auraMgr, caster, targets),
+	a.TickArea(1*time.Second, 100, nil, []uint64{2},
 		func(a *aura.Aura, eff *aura.AuraEffect, amount float64, tid uint64) {
 			tickDamage = amount
 			tickTargetID = tid
@@ -217,15 +178,18 @@ func TestBlizzard_ManaConsumed(t *testing.T) {
 
 func TestBlizzard_EnemyLeavingArea(t *testing.T) {
 	caster := newTestCaster(1, 0)
-	enemy := newTestEnemy(2, 10, 0)
 	auraMgr := aura.NewManager(nil)
 
 	CastBlizzard(caster, 10, 0, 0, auraMgr, nil)
 
+	a := auraMgr.FindAreaAura(1, spell.SpellID(Info.ID))
+	if a == nil {
+		t.Fatal("expected area aura")
+	}
+
 	// First tick - enemy in range
-	targets := []targeting.Targetable{enemy}
 	var tickCount int
-	auraMgr.TickPeriodicArea(1*time.Second, 100, resolveTargets(auraMgr, caster, targets),
+	a.TickArea(1*time.Second, 100, nil, []uint64{2},
 		func(a *aura.Aura, eff *aura.AuraEffect, amount float64, tid uint64) {
 			tickCount++
 		})
@@ -233,12 +197,9 @@ func TestBlizzard_EnemyLeavingArea(t *testing.T) {
 		t.Errorf("expected 1 tick hit (enemy in range), got %d", tickCount)
 	}
 
-	// Enemy moves out of range
-	enemyMoved := &enemyUnit{id: 2, alive: true, pos: testPos{x: 50, y: 50}}
-	targetsMoved := []targeting.Targetable{enemyMoved}
-
+	// Second tick - enemy out of range (empty target list)
 	tickCount = 0
-	auraMgr.TickPeriodicArea(1*time.Second, 100, resolveTargets(auraMgr, caster, targetsMoved),
+	a.TickArea(1*time.Second, 100, nil, []uint64{},
 		func(a *aura.Aura, eff *aura.AuraEffect, amount float64, tid uint64) {
 			tickCount++
 		})
@@ -249,17 +210,18 @@ func TestBlizzard_EnemyLeavingArea(t *testing.T) {
 
 func TestBlizzard_MultipleEnemies(t *testing.T) {
 	caster := newTestCaster(1, 0)
-	e1 := newTestEnemy(2, 10, 0)
-	e2 := newTestEnemy(3, 12, 1)
-	e3 := newTestEnemy(4, 50, 50)
 	auraMgr := aura.NewManager(nil)
 
 	CastBlizzard(caster, 10, 0, 0, auraMgr, nil)
 
-	targets := []targeting.Targetable{e1, e2, e3}
-	var hitTargets []uint64
+	a := auraMgr.FindAreaAura(1, spell.SpellID(Info.ID))
+	if a == nil {
+		t.Fatal("expected area aura")
+	}
 
-	auraMgr.TickPeriodicArea(1*time.Second, 100, resolveTargets(auraMgr, caster, targets),
+	// 2 enemies in range, 1 out of range — TickArea receives resolved target IDs
+	var hitTargets []uint64
+	a.TickArea(1*time.Second, 100, nil, []uint64{2, 3},
 		func(a *aura.Aura, eff *aura.AuraEffect, amount float64, tid uint64) {
 			hitTargets = append(hitTargets, tid)
 		})

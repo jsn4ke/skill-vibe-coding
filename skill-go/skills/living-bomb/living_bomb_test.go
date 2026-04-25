@@ -157,12 +157,17 @@ func TestLivingBomb_PeriodicTicks(t *testing.T) {
 
 	CastLivingBomb(caster, 2, auraMgr, bus)
 
+	a := auraMgr.FindAura(2, 217694, 1)
+	if a == nil {
+		t.Fatal("expected periodic aura")
+	}
+
 	tickCount := 0
 	casterSP := caster.GetStatValue(3)
 
 	const stepMs int32 = 100
 	for simMs := int32(0); simMs < 4000; simMs += stepMs {
-		auraMgr.TickPeriodic(2, time.Duration(stepMs)*time.Millisecond, casterSP,
+		a.Tick(time.Duration(stepMs)*time.Millisecond, casterSP, nil,
 			func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {
 				tickCount++
 				expected := 0.06 * 100
@@ -254,26 +259,21 @@ func TestLivingBomb_ExplosionHitsAoETargets(t *testing.T) {
 	CastLivingBomb(caster, 2, auraMgr, bus)
 
 	casterSP := caster.GetStatValue(3)
+	a := auraMgr.FindAura(2, 217694, 1)
+	if a == nil {
+		t.Fatal("expected aura")
+	}
+
 	const stepMs int32 = 100
 	for simMs := int32(0); simMs < 5000; simMs += stepMs {
-		auraMgr.TickPeriodic(2, time.Duration(stepMs)*time.Millisecond, casterSP,
+		a.Tick(time.Duration(stepMs)*time.Millisecond, casterSP, bus,
 			func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {})
 	}
 
-	// Explosion should hit B and C (not A, the carrier)
-	explosionHits := 0
-	bus.Subscribe(event.OnSpellHit, func(e event.Event) {
-		if e.SpellID == 44461 {
-			explosionHits++
-			if e.TargetID == 2 {
-				t.Error("carrier (targetA) should not be hit by explosion")
-			}
-		}
-	})
-	// Events were already published; re-run to capture
-	// Since we can't retroactively subscribe, check aura spread instead
+	// Manually trigger expiry → AfterRemove hook → explosion → spread
+	auraMgr.RemoveAura(a, aura.RemoveByExpire)
 
-	// Verify spread: B and C should have periodic auras with canSpread=0
+	// Explosion should have spread to B and C
 	auraB := auraMgr.FindAura(3, 217694, 1)
 	auraC := auraMgr.FindAura(4, 217694, 1)
 
@@ -300,13 +300,11 @@ func TestLivingBomb_SpreadChainTerminates(t *testing.T) {
 
 	bus := event.NewBus()
 	auraMgr := aura.NewManager(bus)
-	// AoE sees A and B — when B's bomb explodes, it sees A nearby
 	selector := &aoeSelector{targets: []uint64{2, 3}}
 	setupRegistry(caster, auraMgr, bus, selector)
 
 	CastLivingBomb(caster, 2, auraMgr, bus)
 
-	// Track all aura applications
 	auraCount := 0
 	bus.Subscribe(event.OnAuraApplied, func(e event.Event) {
 		if e.SpellID == 217694 {
@@ -318,10 +316,17 @@ func TestLivingBomb_SpreadChainTerminates(t *testing.T) {
 	const stepMs int32 = 100
 
 	// Phase 1: Tick targetA's bomb to expiry → explosion → spread to B
+	a := auraMgr.FindAura(2, 217694, 1)
+	if a == nil {
+		t.Fatal("expected aura on targetA")
+	}
 	for simMs := int32(0); simMs < 5000; simMs += stepMs {
-		auraMgr.TickPeriodic(2, time.Duration(stepMs)*time.Millisecond, casterSP,
+		a.Tick(time.Duration(stepMs)*time.Millisecond, casterSP, bus,
 			func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {})
 	}
+
+	// Manually trigger expiry → AfterRemove hook → explosion → spread
+	auraMgr.RemoveAura(a, aura.RemoveByExpire)
 
 	// B should now have a bomb (canSpread=0)
 	auraB := auraMgr.FindAura(3, 217694, 1)
@@ -329,12 +334,12 @@ func TestLivingBomb_SpreadChainTerminates(t *testing.T) {
 		t.Fatal("expected spread aura on targetB")
 	}
 
-	// Reset count — only count new auras from B's expiry
+	// Reset count
 	auraCount = 0
 
 	// Phase 2: Tick targetB's bomb to expiry → explosion → should NOT spread further
 	for simMs := int32(0); simMs < 5000; simMs += stepMs {
-		auraMgr.TickPeriodic(3, time.Duration(stepMs)*time.Millisecond, casterSP,
+		auraB.Tick(time.Duration(stepMs)*time.Millisecond, casterSP, bus,
 			func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {})
 	}
 

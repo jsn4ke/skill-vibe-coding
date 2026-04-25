@@ -154,8 +154,13 @@ func TestFireball_DoTTicksWithSP(t *testing.T) {
 
 	CastFireball(caster, 2, auraMgr, nil)
 
+	a := auraMgr.FindAura(2, spell.SpellID(Info.ID), 1)
+	if a == nil {
+		t.Fatal("expected DoT aura")
+	}
+
 	var tickDamage float64
-	auraMgr.TickPeriodic(2, 2*time.Second, 100, func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {
+	a.Tick(2*time.Second, 100, nil, func(a *aura.Aura, eff *aura.AuraEffect, amount float64) {
 		tickDamage = amount
 	})
 
