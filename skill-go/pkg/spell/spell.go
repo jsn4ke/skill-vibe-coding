@@ -103,6 +103,7 @@ type Spell struct {
 	AoESelector    AoESelector
 	AoECenter      [3]float64
 	AoEExcludeID   uint64
+	Engine         SpellEngineRef
 }
 
 type Caster interface {
@@ -121,6 +122,23 @@ type Position interface {
 	GetY() float64
 	GetZ() float64
 	GetFacing() float64
+}
+
+// SpellEngineRef provides spell with engine access for interrupt checks.
+// Implemented by engine.Engine to avoid circular imports.
+type SpellEngineRef interface {
+	GetCasterUnit(id uint64) CasterUnit
+	AuraRemover() AuraRemover
+}
+
+// CasterUnit is a minimal interface for what Spell needs from a target unit.
+type CasterUnit interface {
+	IsAlive() bool
+}
+
+// AuraRemover removes an aura from owner/target by spell ID and target ID.
+type AuraRemover interface {
+	RemoveAuraFromChannel(ownerID uint64, targetID uint64, spellID SpellID)
 }
 
 type TargetData struct {
@@ -164,21 +182,59 @@ func (s *Spell) Prepare() SpellCastResult {
 	return CastOK
 }
 
+// MaxRangeTolerance is the maximum range tolerance for spell range checks.
+// Aligned with TC's MAX_SPELL_RANGE_TOLERANCE.
+const MaxRangeTolerance = 3.0
+
 func (s *Spell) Update(diffMs int32) {
 	if s.State == StateFinished || s.State == StateNull {
 		return
 	}
 
+	// --- Interrupt checks (aligned with TC Spell::update) ---
+
+	// 1. Caster death
 	if !s.Caster.IsAlive() {
 		s.Cancel()
 		return
 	}
 
-	if s.State == StatePreparing && s.Caster.IsMoving() && s.Info.HasAttribute(AttrBreakOnMove) {
-		s.Cancel()
-		return
+	// 2. Target disappeared (TC: UpdatePointers + target GUID check)
+	if s.Targets.UnitTargetID != 0 && s.Engine != nil {
+		if s.Engine.GetCasterUnit(s.Targets.UnitTargetID) == nil {
+			s.Cancel()
+			return
+		}
 	}
 
+	// 3. Movement interrupt (TC: CheckMovement)
+	// Triggered spells are immune to movement interrupt
+	if s.CastFlags&TriggeredFullMask == 0 && s.Caster.IsMoving() {
+		shouldInterrupt := false
+		if s.State == StatePreparing {
+			shouldInterrupt = s.Info.InterruptFlags.HasFlag(InterruptMovement) || s.Info.HasAttribute(AttrBreakOnMove)
+		} else if s.State == StateChanneling {
+			shouldInterrupt = s.Info.InterruptFlags.HasFlag(InterruptMovement) || s.Info.HasAttribute(AttrBreakOnMove)
+		}
+		if shouldInterrupt {
+			s.Cancel()
+			return
+		}
+	}
+
+	// 4. Range check during PREPARING (TC: CheckRange in cast)
+	if s.State == StatePreparing && s.Targets.UnitTargetID != 0 && s.Info.RangeMax > 0 {
+		casterPos := s.Caster.GetPosition()
+		targetPos := s.Caster.GetTargetPosition(s.Targets.UnitTargetID)
+		dist := positionDistance(casterPos, targetPos)
+		tolerance := math.Min(MaxRangeTolerance, s.Info.RangeMax*0.1)
+		if dist > s.Info.RangeMax+tolerance {
+			s.Cancel()
+			return
+		}
+	}
+
+	// --- State machine ---
 	switch s.State {
 	case StatePreparing:
 		if s.Timer > 0 {
@@ -189,6 +245,9 @@ func (s *Spell) Update(diffMs int32) {
 			}
 		}
 	case StateChanneling:
+		// Validate channel targets each tick (TC: UpdateChanneledTargetList)
+		s.validateChannelTargets()
+
 		if s.Timer > 0 {
 			s.Timer -= diffMs
 			if s.Timer <= 0 {
@@ -204,6 +263,66 @@ func (s *Spell) Update(diffMs int32) {
 				s.HandleImmediate()
 			}
 		}
+	}
+}
+
+// validateChannelTargets checks each target in TargetInfos for validity.
+// Targets are removed if: unit gone, dead, or out of range.
+// If all targets are removed, the spell is cancelled.
+// Aligned with TC's Spell::UpdateChanneledTargetList.
+func (s *Spell) validateChannelTargets() {
+	if s.Engine == nil || len(s.TargetInfos) == 0 {
+		return
+	}
+
+	tolerance := math.Min(MaxRangeTolerance, s.Info.RangeMax*0.1)
+	var remaining []TargetInfo
+
+	for _, ti := range s.TargetInfos {
+		// Check target exists
+		targetUnit := s.Engine.GetCasterUnit(ti.TargetID)
+		if targetUnit == nil {
+			s.removeChannelAura(ti.TargetID)
+			continue
+		}
+
+		// Check target alive
+		if !targetUnit.IsAlive() {
+			s.removeChannelAura(ti.TargetID)
+			continue
+		}
+
+		// Check range (only if spell has range)
+		if s.Info.RangeMax > 0 {
+			casterPos := s.Caster.GetPosition()
+			targetPos := s.Caster.GetTargetPosition(ti.TargetID)
+			dist := positionDistance(casterPos, targetPos)
+			if dist > s.Info.RangeMax+tolerance {
+				s.removeChannelAura(ti.TargetID)
+				continue
+			}
+		}
+
+		remaining = append(remaining, ti)
+	}
+
+	s.TargetInfos = remaining
+
+	// All targets gone — cancel channel (TC: "Channeled spell removed due to lack of targets")
+	if len(s.TargetInfos) == 0 {
+		s.Cancel()
+	}
+}
+
+// removeChannelAura removes the aura from a channel target when the target
+// leaves range, dies, or disappears.
+func (s *Spell) removeChannelAura(targetID uint64) {
+	if s.Engine == nil {
+		return
+	}
+	remover := s.Engine.AuraRemover()
+	if remover != nil {
+		remover.RemoveAuraFromChannel(s.Caster.GetID(), targetID, s.ID)
 	}
 }
 
@@ -285,9 +404,33 @@ func (s *Spell) Cancel() {
 	if s.State == StateFinished {
 		return
 	}
+
+	// Record old state for state-specific cleanup (TC pattern)
+	oldState := s.State
+	s.State = StateFinished
+
+	// State-specific cleanup
+	switch oldState {
+	case StatePreparing:
+		// TC: CancelGlobalCooldown() — placeholder for future GCD system
+	case StateChanneling:
+		// Remove all auras from channel targets
+		if s.Engine != nil {
+			remover := s.Engine.AuraRemover()
+			if remover != nil {
+				for _, ti := range s.TargetInfos {
+					remover.RemoveAuraFromChannel(s.Caster.GetID(), ti.TargetID, s.ID)
+				}
+			}
+		}
+	}
+
+	// User hook
 	if s.OnCancel != nil {
 		s.OnCancel()
 	}
+
+	// Bus event
 	if s.Bus != nil {
 		s.Bus.Publish(event.Event{
 			Type:     event.OnSpellCancel,
@@ -296,6 +439,9 @@ func (s *Spell) Cancel() {
 			Extra:    map[string]any{"result": CastFailedInterrupted, "spellName": s.Info.Name},
 		})
 	}
+
+	// Restore old state for finish() to know original state (TC pattern)
+	s.State = oldState
 	s.Finish(CastFailedInterrupted)
 }
 

@@ -64,6 +64,7 @@ const (
 	RemoveByDeath
 	RemoveByDispel
 	RemoveByStack
+	RemoveByInterrupt
 )
 
 type StackRule uint8
@@ -96,7 +97,8 @@ type Aura struct {
 	IsAreaAura  bool
 	AreaCenter  [3]float64
 	AreaRadius  float64
-	SpellValues map[uint8]float64
+	SpellValues    map[uint8]float64
+	InterruptFlags spell.SpellAuraInterruptFlags
 }
 
 type AuraEffect struct {

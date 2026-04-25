@@ -145,6 +145,9 @@ func handleApplyAura(ctx *Context) {
 		a.SpellValues = ctx.Spell.SpellValues
 	}
 
+	// Copy AuraInterruptFlags from effect to aura
+	a.InterruptFlags = ei.AuraInterruptFlags
+
 	if ei.AuraPeriod > 0 {
 		a.Effects = append(a.Effects, aura.AuraEffect{
 			EffectIndex:    ei.EffectIndex,

@@ -159,3 +159,62 @@ func TestArcaneMissiles_EngineTimelineOutput(t *testing.T) {
 		t.Error("timeline should have events")
 	}
 }
+
+func TestArcaneMissiles_EngineMovementCancelsChannel(t *testing.T) {
+	eng := engine.New()
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: 0}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
+
+	RegisterScripts(eng, caster)
+
+	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
+
+	if s.State != spell.StateChanneling {
+		t.Fatalf("expected StateChanneling, got %v", s.State)
+	}
+
+	// Drive 1 tick
+	eng.Advance(100)
+
+	// Move caster — should interrupt
+	caster.SetPosition(entity.Position{X: 5, Y: 0, Z: 0})
+	eng.Advance(100) // movement detected, isMoving=true
+	eng.Advance(100) // spell sees isMoving=true, cancels
+
+	if s.State != spell.StateFinished {
+		t.Errorf("expected StateFinished after movement, got %v", s.State)
+	}
+	if s.Result != spell.CastFailedInterrupted {
+		t.Errorf("expected CastFailedInterrupted, got %v", s.Result)
+	}
+}
+
+func TestArcaneMissiles_EngineTargetDeathCancelsChannel(t *testing.T) {
+	eng := engine.New()
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: 0}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+	target := eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
+
+	RegisterScripts(eng, caster)
+
+	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
+	if s.State != spell.StateChanneling {
+		t.Fatalf("expected StateChanneling, got %v", s.State)
+	}
+
+	// Drive 1 tick
+	eng.Advance(100)
+
+	// Kill target — mark as dead
+	target.Entity.State = target.Entity.State.Set(entity.StateDead)
+
+	// Advance — validateChannelTargets should detect dead target
+	eng.Advance(100)
+
+	if s.State != spell.StateFinished {
+		t.Errorf("expected StateFinished after target death, got %v", s.State)
+	}
+}

@@ -24,6 +24,9 @@ Each skill engine test should cover at minimum:
 - Effect results (damage, healing, aura application)
 - Cancel/interrupt behavior where applicable
 - Spread/chain behavior for skills with AoE mechanics
+- **Movement interrupt** — caster movement cancels PREPARING/CHANNELING spells (for spells with InterruptMovement)
+- **Target out of range** — target moving out of range cancels cast (for spells with RangeMax)
+- **Target removed/dead** — target disappearing or dying cancels channel spells
 
 ## Engine Test Pattern
 

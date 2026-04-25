@@ -88,6 +88,7 @@ func TestFireball_EngineManaConsumed(t *testing.T) {
 	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: 0}), stat.NewStatSet())
 	caster.Stats.SetBase(stat.SpellPower, 100)
 	caster.Stats.SetBase(stat.Mana, 1000)
+	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
 	manaBefore := caster.Stats.Get(stat.Mana)
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
@@ -150,4 +151,83 @@ func TestFireball_EngineAuraProperties(t *testing.T) {
 func TestFireball_EngineTimelineOutput(t *testing.T) {
 	output := runFireballEngineTimeline()
 	t.Log("\n" + output)
+}
+
+func TestFireball_EngineMovementCancels(t *testing.T) {
+	eng := engine.New()
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: 0}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
+
+	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
+	if s.State != spell.StatePreparing {
+		t.Fatalf("expected StatePreparing, got %v", s.State)
+	}
+
+	// Drive 1 tick to establish baseline position
+	eng.Advance(100)
+
+	// Move caster — movement detected at end of next Update, spell interrupted on following tick
+	caster.SetPosition(entity.Position{X: 5, Y: 0, Z: 0})
+	eng.Advance(100) // movement detected, isMoving=true
+	eng.Advance(100) // spell sees isMoving=true, cancels
+
+	if s.State != spell.StateFinished {
+		t.Errorf("expected StateFinished after movement, got %v", s.State)
+	}
+	if s.Result != spell.CastFailedInterrupted {
+		t.Errorf("expected CastFailedInterrupted, got %v", s.Result)
+	}
+}
+
+func TestFireball_EngineOutOfRangeCancels(t *testing.T) {
+	eng := engine.New()
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: 0}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+	target := eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
+
+	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
+	if s.State != spell.StatePreparing {
+		t.Fatalf("expected StatePreparing, got %v", s.State)
+	}
+
+	// Drive 1 tick
+	eng.Advance(100)
+
+	// Move target out of range (RangeMax=35, tolerance=3.5)
+	target.SetPosition(entity.Position{X: 50, Y: 0, Z: 0})
+	eng.Advance(100)
+
+	if s.State != spell.StateFinished {
+		t.Errorf("expected StateFinished after target OOR, got %v", s.State)
+	}
+	if s.Result != spell.CastFailedInterrupted {
+		t.Errorf("expected CastFailedInterrupted, got %v", s.Result)
+	}
+}
+
+func TestFireball_EngineTargetRemovedCancels(t *testing.T) {
+	eng := engine.New()
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: 0}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
+
+	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
+
+	// Drive 1 tick
+	eng.Advance(100)
+
+	// Remove target from engine
+	eng.RemoveUnit(2)
+	eng.Advance(100)
+
+	if s.State != spell.StateFinished {
+		t.Errorf("expected StateFinished after target removed, got %v", s.State)
+	}
+	if s.Result != spell.CastFailedInterrupted {
+		t.Errorf("expected CastFailedInterrupted, got %v", s.Result)
+	}
 }

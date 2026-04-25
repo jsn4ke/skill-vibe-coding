@@ -78,6 +78,11 @@ func (e *Engine) GetUnit(id uint64) *unit.Unit {
 	return e.units[id]
 }
 
+// RemoveUnit removes a Unit from the engine.
+func (e *Engine) RemoveUnit(id uint64) {
+	delete(e.units, id)
+}
+
 // GetUnitsInRadius returns all units within radius of center, excluding excludeID.
 func (e *Engine) GetUnitsInRadius(center [3]float64, radius float64, excludeID uint64) []*unit.Unit {
 	var result []*unit.Unit
@@ -205,6 +210,7 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 
 	s := spell.NewSpell(spell.SpellID(info.ID), info, caster, flags)
 	s.Bus = e.bus
+	s.Engine = e // Wire engine reference for interrupt checks
 
 	// Wire OnAuraCreated so the effect pipeline can register auras automatically
 	s.OnAuraCreated = func(a interface{}) {
@@ -258,3 +264,35 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 
 // Ensure Engine implements unit.EngineRef
 var _ unit.EngineRef = (*Engine)(nil)
+
+// Ensure Engine implements spell.SpellEngineRef for interrupt checks
+func (e *Engine) GetCasterUnit(id uint64) spell.CasterUnit {
+	u := e.units[id]
+	if u == nil {
+		return nil
+	}
+	return u
+}
+
+func (e *Engine) AuraRemover() spell.AuraRemover {
+	return &auraRemover{engine: e}
+}
+
+// auraRemover adapts engine to spell.AuraRemover for channel aura cleanup.
+type auraRemover struct {
+	engine *Engine
+}
+
+func (r *auraRemover) RemoveAuraFromChannel(ownerID uint64, targetID uint64, spellID spell.SpellID) {
+	owner := r.engine.GetUnit(ownerID)
+	target := r.engine.GetUnit(targetID)
+	if owner == nil || target == nil {
+		return
+	}
+	for _, a := range owner.GetOwnedAuras() {
+		if a.SpellID == spellID && a.TargetID == targetID {
+			r.engine.auraMgr.RemoveAuraFromHosts(a, owner, target, aura.RemoveByCancel)
+			return
+		}
+	}
+}

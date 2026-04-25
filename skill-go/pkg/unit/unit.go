@@ -30,6 +30,11 @@ type Unit struct {
 	// appliedAuras — auras currently affecting this Unit.
 	// Aligned with TC's m_appliedAuras.
 	appliedAuras []*aura.Aura
+
+	// Movement tracking — position change detection per frame.
+	// Aligned with TC's _positionUpdateInfo.Relocated.
+	prevPos  entity.Position
+	isMoving bool
 }
 
 // EngineRef is an interface to avoid circular dependency between Unit and Engine.
@@ -66,11 +71,21 @@ func (u *Unit) ID() uint64 {
 // Order matches TC's Unit::_UpdateSpells:
 //  1. Update active spells (clean finished first, then drive remaining)
 //  2. Update owned auras (tick periodic, clean expired)
+//  3. Detect movement and trigger aura interrupts
 //
-// Reference: TC Unit.cpp:2952-2986
+// Reference: TC Unit.cpp:2952-2986, Unit::InterruptMovementBasedAuras
 func (u *Unit) Update(diff int32) {
 	u.updateSpells(diff)
 	u.updateAuras(diff)
+
+	// Movement detection — compare current position to previous frame.
+	// Aligned with TC's _positionUpdateInfo.Relocated check.
+	curPos := u.Entity.Pos
+	u.isMoving = curPos != u.prevPos
+	if u.isMoving {
+		u.RemoveAurasWithInterruptFlags(spell.AuraInterruptOnMovement)
+	}
+	u.prevPos = curPos
 }
 
 // --- spell.Caster interface implementation ---
@@ -78,7 +93,12 @@ func (u *Unit) Update(diff int32) {
 func (u *Unit) GetID() uint64          { return u.ID() }
 func (u *Unit) IsAlive() bool          { return u.Entity.IsAlive() }
 func (u *Unit) CanCast() bool          { return u.Entity.CanCast() }
-func (u *Unit) IsMoving() bool         { return false } // TODO: movement system
+func (u *Unit) IsMoving() bool { return u.isMoving }
+
+// SetPosition updates the unit's position. Movement detection happens in Update().
+func (u *Unit) SetPosition(pos entity.Position) {
+	u.Entity.Pos = pos
+}
 func (u *Unit) GetStatValue(st uint8) float64 { return u.Stats.Get(stat.StatType(st)) }
 func (u *Unit) GetPosition() spell.Position {
 	return &entityPos{u.Entity.Pos}
@@ -205,6 +225,44 @@ func (u *Unit) FindAreaAura(spellID spell.SpellID) *aura.Aura {
 		}
 	}
 	return nil
+}
+
+// RemoveAurasWithInterruptFlags removes all owned auras whose InterruptFlags
+// match the given flag, using RemoveByInterrupt mode.
+// Also checks the current channeled spell for matching interrupt flag.
+// Aligned with TC's Unit::RemoveAurasWithInterruptFlags.
+func (u *Unit) RemoveAurasWithInterruptFlags(flag spell.SpellAuraInterruptFlags) {
+	if flag == spell.AuraInterruptNone {
+		return
+	}
+
+	// Collect matching auras first (avoid mutating during iteration)
+	var toRemove []*aura.Aura
+	for _, a := range u.ownedAuras {
+		if a.InterruptFlags.HasFlag(flag) {
+			toRemove = append(toRemove, a)
+		}
+	}
+
+	// Remove matching auras via aura manager
+	if u.engine != nil {
+		mgr := u.engine.AuraMgr()
+		for _, a := range toRemove {
+			target := u.engine.GetUnit(a.TargetID)
+			if target == nil {
+				target = u // area aura fallback
+			}
+			mgr.RemoveAuraFromHosts(a, u, target, aura.RemoveByInterrupt)
+		}
+	}
+
+	// Check channeled spell for matching channel interrupt
+	for _, s := range u.activeSpells {
+		if s.State == spell.StateChanneling && s.Info.InterruptFlags.HasFlag(spell.InterruptMovement) {
+			s.Cancel()
+			break
+		}
+	}
 }
 
 // updateAuras ticks all owned periodic auras and removes expired ones.

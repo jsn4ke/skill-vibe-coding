@@ -21,7 +21,8 @@ var Info = spell.SpellInfo{
 	PowerType:   0,
 	RangeMax:    30,
 	IsChanneled: true,
-	Attributes:  spell.AttrChanneled | spell.AttrBreakOnMove,
+	Attributes:     spell.AttrChanneled | spell.AttrBreakOnMove,
+	InterruptFlags: spell.InterruptMovement,
 	Effects: []spell.SpellEffectInfo{
 		{
 			EffectIndex:    0,
