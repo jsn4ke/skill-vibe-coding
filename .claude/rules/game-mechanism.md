@@ -12,9 +12,27 @@ When implementing or designing game skill/mechanism systems in this project, ref
 4. **Spell lifecycle: create → register → Update-driven** — `Engine.CastSpell()` creates a Spell and registers it on the caster; it does NOT self-drive by calling Update internally. The engine is the sole driver of time progression.
 5. **Dummy effect + Script Hook pattern** — EffectDummy provides a hook mount point with no built-in behavior. Scripts intercept via `RegisterScripts` → `HookOnEffectHit` and supply custom logic. No shortcutting this pattern with "just call a function."
 6. **OnAuraCreated auto-registration** — When the effect pipeline creates an aura (EffectApplyAura), the spell's `OnAuraCreated` callback fires, which the engine wires to `AuraMgr.ApplyAura()`. Skills never manually create auras.
-7. **RegisterScripts for complex skills** — Skills with channeled mechanics, spread, or triggered sub-spells expose `RegisterScripts(registry, caster, eng, ...)` that sets up bus listeners (`OnSpellLaunch`, `OnSpellCancel`, `OnAuraTick`) and script hooks (`OnEffectHit`, `AfterRemove`). Simple skills (pure instant + effect pipeline) need no RegisterScripts.
+7. **RegisterScripts for complex skills** — Skills with channeled mechanics, spread, or triggered sub-spells expose `RegisterScripts(registry, caster, eng, ...)` that sets up script hooks (`OnEffectHit`, `AfterRemove`, `OnSpellLaunch`, `OnSpellCancel`, `OnPeriodic`). Simple skills (pure instant + effect pipeline) need no RegisterScripts.
 
 **Why:** Simplifying these patterns creates technical debt. Every shortcut taken now (flat global aura manager, Cast functions self-driving Update, no owned/applied separation) will need to be refactored later when more complex skills require the full architecture.
+
+## Deprecated Mechanisms — Zero Tolerance
+
+When new infrastructure replaces an old mechanism, both must happen in the same change:
+1. New infrastructure implemented
+2. All consumers migrated
+3. Old mechanism deleted — no "compatibility mode" coexistence beyond one change
+
+**Forbidden patterns in skill code (use the replacement instead):**
+
+| Forbidden | Replacement | Reason |
+|-----------|-------------|--------|
+| `Bus.Subscribe()` for skill logic | `Registry.RegisterSpellHook/AuraHook` | Bus is observer-only (timeline, logs, UI). Skills use Registry for precise SpellID-matched hooks. |
+| `aura.NewAura()` manual construction | `EffectApplyAura` in SpellInfo + `OnAuraCreated` auto-registration | Aura creation is data-driven via the effect pipeline, not manual. |
+| `AttrBreakOnMove` | `InterruptFlags: spell.InterruptMovement` | InterruptFlags is a composable bitmask; AttrBreakOnMove is a single boolean. |
+| `aura.Manager` legacy methods (`AddAura`, `RemoveAura`, `FindAura`, `TickPeriodic`) | `ApplyAura`, `RemoveAuraFromHosts` (Unit-aware methods) | Legacy methods use a flat global map; new methods use owned/applied dual registration. |
+| `Spell.OnCancel` manual binding | `Cancel()` built-in channel cleanup | Cancel() already handles channel target aura removal via validateChannelTargets. |
+| `Bus.Subscribe(OnAuraTick)` for trigger spells | `AuraPeriodicTriggerSpell` + `TriggerSpellID` data-driven tick | The aura system already emits triggerSpellID in tick events; no manual Bus subscription needed. |
 
 ## TC Research Workflow
 

@@ -6,7 +6,7 @@ const (
 	AttrNone          SpellAttribute = 0
 	AttrPassive       SpellAttribute = 1 << iota
 	AttrAllowWhileDead
-	AttrBreakOnMove
+	_ // removed: AttrBreakOnMove — use InterruptFlags instead
 	AttrChanneled
 	AttrInstant
 )
@@ -123,6 +123,16 @@ const (
 	TargetUnitChainEnemy
 	TargetUnitChainAlly
 )
+
+// IsAreaTarget returns true if the implicit target type represents an area effect
+// (AoE, cone, or chain targeting) that needs area aura handling.
+func IsAreaTarget(t ImplicitTarget) bool {
+	switch t {
+	case TargetUnitAreaEnemy, TargetUnitAreaAlly, TargetUnitConeEnemy, TargetUnitChainEnemy, TargetUnitChainAlly:
+		return true
+	}
+	return false
+}
 
 type HitResult uint8
 

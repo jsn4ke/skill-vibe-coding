@@ -46,3 +46,12 @@ The hit delay SHALL be calculated as: `hitDelay = max(distance / Speed, MinDurat
 #### Scenario: Distance clamped to minimum 5 yards
 - **WHEN** Fireball (Speed=20 y/s) is cast at a target 2 yards away
 - **THEN** distance SHALL be clamped to 5 yards, hit delay = 250ms
+
+### Requirement: Fireball uses InterruptFlags instead of AttrBreakOnMove
+
+Fireball's SpellInfo SHALL use `InterruptFlags: spell.InterruptMovement` exclusively. The `AttrBreakOnMove` attribute SHALL NOT be present.
+
+#### Scenario: Fireball SpellInfo has InterruptMovement
+- **WHEN** Fireball SpellInfo is defined
+- **THEN** `Info.InterruptFlags.HasFlag(spell.InterruptMovement)` SHALL return true
+- **AND** `Info.Attributes & spell.AttrBreakOnMove` SHALL be 0

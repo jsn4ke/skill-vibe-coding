@@ -5,6 +5,7 @@ import (
 	"skill-go/pkg/cooldown"
 	"skill-go/pkg/entity"
 	"skill-go/pkg/event"
+	"skill-go/pkg/script"
 	"skill-go/pkg/spell"
 	"skill-go/pkg/stat"
 	"time"
@@ -46,6 +47,7 @@ type EngineRef interface {
 	GetSpellPower(casterID uint64) float64
 	Tick() time.Duration
 	AuraMgr() *aura.Manager
+	ScriptRegistry() *script.Registry
 }
 
 // NewUnit creates a new Unit with the given entity and stats.
@@ -339,6 +341,18 @@ func (u *Unit) tickSingleAura(a *aura.Aura, elapsed time.Duration, sp float64, b
 					Extra:    tickExtra,
 				})
 			}
+
+			// Registry hook for periodic ticks
+			if u.engine != nil {
+				if reg := u.engine.ScriptRegistry(); reg != nil {
+					reg.CallAuraHook(a.SpellID, script.AuraHookOnPeriodic, &script.AuraContext{
+						SpellID:  a.SpellID,
+						TargetID: a.TargetID,
+						CasterID: a.CasterID,
+						Amount:   amount,
+					})
+				}
+			}
 			_ = amount // TODO: apply damage/heal via combat system
 		}
 	}
@@ -369,6 +383,16 @@ func (u *Unit) tickAreaAura(a *aura.Aura, elapsed time.Duration, sp float64, bus
 							SpellID:  uint32(a.SpellID),
 							Value:    amount,
 							Extra:    map[string]any{"spellName": a.SpellName},
+						})
+					}
+
+					// Registry hook for periodic ticks (area aura per target)
+					if reg := u.engine.ScriptRegistry(); reg != nil {
+						reg.CallAuraHook(a.SpellID, script.AuraHookOnPeriodic, &script.AuraContext{
+							SpellID:  a.SpellID,
+							TargetID: t.ID(),
+							CasterID: a.CasterID,
+							Amount:   amount,
 						})
 					}
 				}

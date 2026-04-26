@@ -265,6 +265,9 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 // Ensure Engine implements unit.EngineRef
 var _ unit.EngineRef = (*Engine)(nil)
 
+// ScriptRegistry returns the script registry, satisfying unit.EngineRef.
+func (e *Engine) ScriptRegistry() *script.Registry { return e.registry }
+
 // Ensure Engine implements spell.SpellEngineRef for interrupt checks
 func (e *Engine) GetCasterUnit(id uint64) spell.CasterUnit {
 	u := e.units[id]
@@ -276,6 +279,14 @@ func (e *Engine) GetCasterUnit(id uint64) spell.CasterUnit {
 
 func (e *Engine) AuraRemover() spell.AuraRemover {
 	return &auraRemover{engine: e}
+}
+
+func (e *Engine) CallLaunchHook(spellID spell.SpellID, s *spell.Spell) {
+	e.registry.CallSpellHook(spellID, script.HookOnSpellLaunch, &script.SpellContext{Spell: s})
+}
+
+func (e *Engine) CallCancelHook(spellID spell.SpellID, s *spell.Spell) {
+	e.registry.CallSpellHook(spellID, script.HookOnSpellCancel, &script.SpellContext{Spell: s})
 }
 
 // auraRemover adapts engine to spell.AuraRemover for channel aura cleanup.
@@ -294,5 +305,28 @@ func (r *auraRemover) RemoveAuraFromChannel(ownerID uint64, targetID uint64, spe
 			r.engine.auraMgr.RemoveAuraFromHosts(a, owner, target, aura.RemoveByCancel)
 			return
 		}
+	}
+}
+
+// RemoveOwnedAurasBySpellID removes all auras matching spellID from the caster's owned list.
+// Used by Cancel() to clean up channel spell auras without depending on TargetInfos.
+func (e *Engine) RemoveOwnedAurasBySpellID(casterID uint64, spellID spell.SpellID) {
+	caster := e.GetUnit(casterID)
+	if caster == nil {
+		return
+	}
+	// Collect matching auras first (avoid mutating during iteration)
+	var toRemove []*aura.Aura
+	for _, a := range caster.GetOwnedAuras() {
+		if a.SpellID == spellID {
+			toRemove = append(toRemove, a)
+		}
+	}
+	for _, a := range toRemove {
+		target := e.GetUnit(a.TargetID)
+		if target == nil {
+			target = caster // area aura fallback
+		}
+		e.auraMgr.RemoveAuraFromHosts(a, caster, target, aura.RemoveByCancel)
 	}
 }

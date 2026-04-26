@@ -50,7 +50,6 @@ func fireballInfo() *spell.SpellInfo {
 		PowerCost:  410,
 		PowerType:  0,
 		Duration:   8000,
-		Attributes: spell.AttrBreakOnMove,
 		Speed:      20.0,
 		Effects: []spell.SpellEffectInfo{
 			{

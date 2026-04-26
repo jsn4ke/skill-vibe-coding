@@ -124,11 +124,14 @@ type Position interface {
 	GetFacing() float64
 }
 
-// SpellEngineRef provides spell with engine access for interrupt checks.
+// SpellEngineRef provides spell with engine access for interrupt checks and script hooks.
 // Implemented by engine.Engine to avoid circular imports.
 type SpellEngineRef interface {
 	GetCasterUnit(id uint64) CasterUnit
 	AuraRemover() AuraRemover
+	CallLaunchHook(spellID SpellID, s *Spell)
+	CallCancelHook(spellID SpellID, s *Spell)
+	RemoveOwnedAurasBySpellID(casterID uint64, spellID SpellID)
 }
 
 // CasterUnit is a minimal interface for what Spell needs from a target unit.
@@ -212,9 +215,9 @@ func (s *Spell) Update(diffMs int32) {
 	if s.CastFlags&TriggeredFullMask == 0 && s.Caster.IsMoving() {
 		shouldInterrupt := false
 		if s.State == StatePreparing {
-			shouldInterrupt = s.Info.InterruptFlags.HasFlag(InterruptMovement) || s.Info.HasAttribute(AttrBreakOnMove)
+			shouldInterrupt = s.Info.InterruptFlags.HasFlag(InterruptMovement)
 		} else if s.State == StateChanneling {
-			shouldInterrupt = s.Info.InterruptFlags.HasFlag(InterruptMovement) || s.Info.HasAttribute(AttrBreakOnMove)
+			shouldInterrupt = s.Info.InterruptFlags.HasFlag(InterruptMovement)
 		}
 		if shouldInterrupt {
 			s.Cancel()
@@ -366,7 +369,14 @@ func (s *Spell) Cast(skipCheck bool) {
 		})
 	}
 
+	if s.Engine != nil {
+		s.Engine.CallLaunchHook(s.ID, s)
+	}
+
 	if s.Info.IsChanneled {
+		// Execute effect pipeline for channel spells (aura creation, etc.)
+		// Aligned with TC: channel spells process effects before entering channel state.
+		s.ProcessEffects()
 		s.State = StateChanneling
 		s.Timer = int32(s.Info.Duration)
 	} else if s.Info.Speed > 0 {
@@ -379,7 +389,9 @@ func (s *Spell) Cast(skipCheck bool) {
 	}
 }
 
-func (s *Spell) HandleImmediate() {
+// ProcessEffects handles the effect pipeline and publishes SpellHit events.
+// Does NOT call Finish() — the caller decides when to finish.
+func (s *Spell) ProcessEffects() {
 	s.HandleEffects(HandleLaunch)
 	if ProcessEffectsFn != nil {
 		ProcessEffectsFn(s, HandleHit)
@@ -397,6 +409,10 @@ func (s *Spell) HandleImmediate() {
 			})
 		}
 	}
+}
+
+func (s *Spell) HandleImmediate() {
+	s.ProcessEffects()
 	s.Finish(CastOK)
 }
 
@@ -414,20 +430,21 @@ func (s *Spell) Cancel() {
 	case StatePreparing:
 		// TC: CancelGlobalCooldown() — placeholder for future GCD system
 	case StateChanneling:
-		// Remove all auras from channel targets
+		// Remove all owned auras matching this spell's SpellID from the caster.
+		// Aligned with TC: cancel() iterates and removes auras by spell ID.
 		if s.Engine != nil {
-			remover := s.Engine.AuraRemover()
-			if remover != nil {
-				for _, ti := range s.TargetInfos {
-					remover.RemoveAuraFromChannel(s.Caster.GetID(), ti.TargetID, s.ID)
-				}
-			}
+			s.Engine.RemoveOwnedAurasBySpellID(s.Caster.GetID(), s.ID)
 		}
 	}
 
 	// User hook
 	if s.OnCancel != nil {
 		s.OnCancel()
+	}
+
+	// Registry hook (before Bus event)
+	if s.Engine != nil {
+		s.Engine.CallCancelHook(s.ID, s)
 	}
 
 	// Bus event

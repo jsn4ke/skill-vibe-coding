@@ -3,15 +3,15 @@ package arcanemissiles
 import (
 	"skill-go/pkg/aura"
 	"skill-go/pkg/engine"
-	"skill-go/pkg/event"
+	"skill-go/pkg/script"
 	"skill-go/pkg/spell"
 	"skill-go/pkg/unit"
-	"time"
 )
 
 // Spell 5143 — Arcane Missiles (channeled)
 // Engine-driven: cast via eng.CastSpell(caster, &Info, engine.WithTarget(id))
-// Then call RegisterScripts to set up aura creation and missile triggering.
+// Aura creation and cancel cleanup are fully automatic.
+// RegisterScripts only sets up periodic missile triggering.
 var Info = spell.SpellInfo{
 	ID:          5143,
 	Name:        "Arcane Missiles",
@@ -21,7 +21,7 @@ var Info = spell.SpellInfo{
 	PowerType:   0,
 	RangeMax:    30,
 	IsChanneled: true,
-	Attributes:     spell.AttrChanneled | spell.AttrBreakOnMove,
+	Attributes:     spell.AttrChanneled,
 	InterruptFlags: spell.InterruptMovement,
 	Effects: []spell.SpellEffectInfo{
 		{
@@ -53,67 +53,15 @@ var MissileInfo = spell.SpellInfo{
 	},
 }
 
-// RegisterScripts sets up Arcane Missiles' channeled aura and periodic missile triggering.
-func RegisterScripts(eng *engine.Engine, caster *unit.Unit) {
-	var activeAura *aura.Aura
-
-	// On channel start: create PeriodicTriggerSpell aura
-	eng.Bus().Subscribe(event.OnSpellLaunch, func(e event.Event) {
-		if e.SpellID != uint32(Info.ID) {
-			return
-		}
-
-		targetID := e.TargetID
-		target := eng.GetUnit(targetID)
-		if target == nil {
-			return
-		}
-
-		ei := &Info.Effects[0]
-		a := aura.NewAura(spell.SpellID(Info.ID), caster.ID(), targetID, aura.AuraPeriodicTriggerSpell, 3*time.Second)
-		a.SpellName = Info.Name
-		a.Effects = []aura.AuraEffect{
-			{
-				EffectIndex:    ei.EffectIndex,
-				AuraType:       aura.AuraPeriodicTriggerSpell,
-				Amount:         ei.BasePoints,
-				Period:         time.Duration(ei.AuraPeriod) * time.Millisecond,
-				TriggerSpellID: ei.TriggerSpellID,
-			},
-		}
-		eng.AuraMgr().ApplyAura(caster, target, a)
-		activeAura = a
-	})
-
-	// On aura tick: trigger missile spell
-	eng.Bus().Subscribe(event.OnAuraTick, func(e event.Event) {
-		if e.SpellID != uint32(Info.ID) {
-			return
-		}
-		triggerID, ok := e.Extra["triggerSpellID"]
-		if !ok {
-			return
-		}
-		if triggerID != uint32(MissileInfo.ID) {
-			return
-		}
+// RegisterScripts sets up periodic missile triggering.
+// Aura creation is handled by the effect pipeline during Cast().
+// Cancel cleanup is handled by Cancel()'s RemoveOwnedAurasBySpellID.
+func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.Engine) {
+	// On periodic tick: trigger missile spell
+	registry.RegisterAuraHook(spell.SpellID(Info.ID), script.AuraHookOnPeriodic, func(ctx *script.AuraContext) {
 		eng.CastSpell(caster, &MissileInfo,
-			engine.WithTarget(e.TargetID),
+			engine.WithTarget(ctx.TargetID),
 			engine.WithTriggered(),
 		)
-	})
-
-	// Handle spell cancel — remove aura early
-	eng.Bus().Subscribe(event.OnSpellCancel, func(e event.Event) {
-		if e.SpellID != uint32(Info.ID) {
-			return
-		}
-		if activeAura != nil {
-			target := eng.GetUnit(activeAura.TargetID)
-			if target != nil {
-				eng.AuraMgr().RemoveAuraFromHosts(activeAura, caster, target, aura.RemoveByCancel)
-			}
-			activeAura = nil
-		}
 	})
 }

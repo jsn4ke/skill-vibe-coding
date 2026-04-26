@@ -17,6 +17,8 @@ const (
 	HookAfterCast
 	HookBeforeHit
 	HookAfterHit
+	HookOnSpellLaunch
+	HookOnSpellCancel
 )
 
 type AuraHook uint8

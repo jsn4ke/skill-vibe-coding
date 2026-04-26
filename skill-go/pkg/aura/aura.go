@@ -238,12 +238,8 @@ func (a *Aura) TickArea(elapsed time.Duration, casterSpellPower float64, bus *ev
 	}
 }
 
-// Manager manages aura lifecycle. In the new architecture, it acts as a factory
-// and provides Unit-aware ApplyAura/RemoveAuraFromHosts. Legacy global-map
-// methods (AddAura, RemoveAura, FindAura) are retained for skill code that
-// hasn't migrated to engine.CastSpell yet.
+// Manager manages aura lifecycle. Provides Unit-aware ApplyAura/RemoveAuraFromHosts.
 type Manager struct {
-	auras    map[uint64][]*Aura // legacy: keyed by targetID
 	nextID   uint64
 	bus      *event.Bus
 	registry *script.Registry
@@ -251,8 +247,7 @@ type Manager struct {
 
 func NewManager(bus *event.Bus) *Manager {
 	return &Manager{
-		auras: make(map[uint64][]*Aura),
-		bus:   bus,
+		bus: bus,
 	}
 }
 
@@ -346,106 +341,6 @@ func (m *Manager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode Remo
 			break
 		}
 	}
-}
-
-// --- Legacy methods (backward compatibility) ---
-
-// AddAura adds an aura to the legacy global map. Retained for existing skill code.
-func (m *Manager) AddAura(aura *Aura) {
-	aura.ID = m.nextID
-	m.nextID++
-
-	existing := m.FindAura(aura.TargetID, aura.SpellID, aura.CasterID)
-	if existing != nil {
-		switch existing.StackRule {
-		case StackRefresh:
-			existing.Refresh()
-			return
-		case StackAddStack:
-			existing.AddStack()
-			return
-		case StackReplace:
-			m.RemoveAura(existing, RemoveByStack)
-		default:
-			m.RemoveAura(existing, RemoveByDefault)
-		}
-	}
-
-	m.auras[aura.TargetID] = append(m.auras[aura.TargetID], aura)
-
-	if m.registry != nil {
-		m.registry.CallAuraHook(aura.SpellID, script.AuraHookAfterApply, &script.AuraContext{
-			SpellID:  aura.SpellID,
-			TargetID: aura.TargetID,
-			CasterID: aura.CasterID,
-			Aura:     aura,
-		})
-	}
-
-	if m.bus != nil {
-		m.bus.Publish(event.Event{
-			Type:     event.OnAuraApplied,
-			SourceID: aura.CasterID,
-			TargetID: aura.TargetID,
-			SpellID:  uint32(aura.SpellID),
-			Extra:    map[string]any{"auraType": auraTypeName(aura.AuraType), "duration": aura.Duration, "spellName": aura.SpellName},
-		})
-	}
-}
-
-// RemoveAura removes an aura from the legacy global map.
-func (m *Manager) RemoveAura(aura *Aura, mode RemoveMode) {
-	if m.registry != nil {
-		m.registry.CallAuraHook(aura.SpellID, script.AuraHookAfterRemove, &script.AuraContext{
-			SpellID:    aura.SpellID,
-			TargetID:   aura.TargetID,
-			CasterID:   aura.CasterID,
-			RemoveMode: uint8(mode),
-			Aura:       aura,
-		})
-	}
-	list := m.auras[aura.TargetID]
-	for i, a := range list {
-		if a.ID == aura.ID {
-			m.auras[aura.TargetID] = append(list[:i], list[i+1:]...)
-			break
-		}
-	}
-}
-
-func (m *Manager) RemoveAurasBySpellID(targetID uint64, spellID spell.SpellID) {
-	list := m.auras[targetID]
-	var remaining []*Aura
-	for _, a := range list {
-		if a.SpellID != spellID {
-			remaining = append(remaining, a)
-		}
-	}
-	m.auras[targetID] = remaining
-}
-
-func (m *Manager) FindAura(targetID uint64, spellID spell.SpellID, casterID uint64) *Aura {
-	for _, a := range m.auras[targetID] {
-		if a.SpellID == spellID && a.CasterID == casterID {
-			return a
-		}
-	}
-	return nil
-}
-
-func (m *Manager) GetAuras(targetID uint64) []*Aura {
-	return m.auras[targetID]
-}
-
-func (m *Manager) FindAreaAura(casterID uint64, spellID spell.SpellID) *Aura {
-	for _, list := range m.auras {
-		for _, a := range list {
-			if a.IsAreaAura && a.CasterID == casterID && a.SpellID == spellID {
-				return a
-			}
-		}
-	}
-	return nil
 }
 
 func auraTypeName(t AuraType) string {

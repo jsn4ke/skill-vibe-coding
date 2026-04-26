@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: AuraContext carries RemoveMode and Aura reference
 
@@ -81,3 +81,33 @@ The `Spell.SelectTargets()` method SHALL support `TargetUnitAreaEnemy` and simil
 #### Scenario: AoE target selection excludes specified ID
 - **WHEN** SelectTargets is called with an exclude target
 - **THEN** the excluded target SHALL NOT appear in TargetInfos
+
+### Requirement: Registry supports OnSpellLaunch and OnSpellCancel hook types
+
+`HookOnSpellLaunch` and `HookOnSpellCancel` SHALL remain available in the Registry for future skills that need custom behavior at launch or cancel time. However, they SHALL NOT be required for aura creation or cleanup — the effect pipeline and Cancel() handle these automatically for all channel spells.
+
+#### Scenario: OnSpellLaunch hook called when spell is launched
+- **WHEN** a spell is cast and enters launched/channeling state
+- **THEN** the Registry SHALL call `CallSpellHook(spellID, HookOnSpellLaunch, ctx)` with SpellContext containing the Spell
+
+#### Scenario: OnSpellCancel hook called when spell is cancelled
+- **WHEN** a spell is cancelled (interrupt, movement, etc.)
+- **THEN** the Registry SHALL call `CallSpellHook(spellID, HookOnSpellCancel, ctx)` with SpellContext containing the Spell
+
+#### Scenario: HookOnSpellLaunch fires but does not need to create auras
+- **WHEN** a channel spell is cast and the effect pipeline creates the aura
+- **THEN** HookOnSpellLaunch SHALL fire after the aura is already created
+- **AND** skill code SHALL NOT need to register a HookOnSpellLaunch handler for aura creation
+
+#### Scenario: HookOnSpellCancel fires but does not need to clean up auras
+- **WHEN** a channel spell is cancelled and Cancel() removes owned auras by SpellID
+- **THEN** HookOnSpellCancel SHALL fire after aura cleanup is complete
+- **AND** skill code SHALL NOT need to register a HookOnSpellCancel handler for aura cleanup
+
+### Requirement: Registry supports AuraHookOnPeriodic for aura tick hooks
+
+The `script.Registry` SHALL support `AuraHookOnPeriodic` hook type for aura scripts. This hook is called during aura periodic ticks.
+
+#### Scenario: OnPeriodic hook called on aura tick
+- **WHEN** an aura's periodic effect ticks
+- **THEN** the Registry SHALL call `CallAuraHook(spellID, AuraHookOnPeriodic, ctx)` with AuraContext containing SpellID, TargetID, CasterID, and Amount

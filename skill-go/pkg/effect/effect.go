@@ -58,8 +58,35 @@ func ProcessAll(s *spell.Spell, mode spell.EffectHandleMode) {
 		return
 	}
 	sp := s.Caster.GetStatValue(3) // stat.SpellPower = 3
+	casterID := s.Caster.GetID()
 	for i := range s.Info.Effects {
 		ei := &s.Info.Effects[i]
+
+		// For area effects with no TargetInfos, process once with caster as target
+		// so handleApplyAura can create the area aura.
+		if len(s.TargetInfos) == 0 && (spell.IsAreaTarget(ei.TargetA) || spell.IsAreaTarget(ei.TargetB)) {
+			ctx := &Context{
+				Spell:            s,
+				EffectInfo:       ei,
+				CasterID:         casterID,
+				TargetID:         casterID,
+				Mode:             mode,
+				CasterSpellPower: sp,
+			}
+			if ScriptRegistry != nil && ScriptRegistry.HasSpellHook(s.ID, script.HookOnEffectHit) {
+				spellCtx := &script.SpellContext{Spell: s, EffectIndex: ei.EffectIndex}
+				ScriptRegistry.CallSpellHook(s.ID, script.HookOnEffectHit, spellCtx)
+				if spellCtx.PreventDefault {
+					continue
+				}
+			}
+			Process(ctx)
+			if ctx.AppliedAura != nil && s.OnAuraCreated != nil {
+				s.OnAuraCreated(ctx.AppliedAura)
+			}
+			continue
+		}
+
 		for j := range s.TargetInfos {
 			ti := &s.TargetInfos[j]
 			if ti.EfffectMask&(1<<ei.EffectIndex) == 0 {
@@ -68,7 +95,7 @@ func ProcessAll(s *spell.Spell, mode spell.EffectHandleMode) {
 			ctx := &Context{
 				Spell:            s,
 				EffectInfo:       ei,
-				CasterID:         s.Caster.GetID(),
+				CasterID:         casterID,
 				TargetID:         ti.TargetID,
 				Mode:             mode,
 				CasterSpellPower: sp,
@@ -135,7 +162,14 @@ func handleApplyAura(ctx *Context) {
 		duration = 0
 	}
 
-	a := aura.NewAura(spellInfo.ID, ctx.CasterID, ctx.TargetID, auraType, duration)
+	// For area effects, the aura target is the caster (not AoE enemies)
+	targetID := ctx.TargetID
+	isArea := spell.IsAreaTarget(ei.TargetA) || spell.IsAreaTarget(ei.TargetB)
+	if isArea {
+		targetID = ctx.CasterID
+	}
+
+	a := aura.NewAura(spellInfo.ID, ctx.CasterID, targetID, auraType, duration)
 	a.MaxStack = 1
 	a.StackRule = aura.StackRefresh
 	a.SpellName = spellInfo.Name
@@ -147,6 +181,20 @@ func handleApplyAura(ctx *Context) {
 
 	// Copy AuraInterruptFlags from effect to aura
 	a.InterruptFlags = ei.AuraInterruptFlags
+
+	// Area aura: set IsAreaAura, AreaCenter, AreaRadius
+	if isArea {
+		a.IsAreaAura = true
+		destPos := ctx.Spell.Targets.DestPos
+		if destPos != [3]float64{} {
+			a.AreaCenter = destPos
+		} else {
+			// Fallback: use caster position
+			pos := ctx.Spell.Caster.GetPosition()
+			a.AreaCenter = [3]float64{pos.GetX(), pos.GetY(), pos.GetZ()}
+		}
+		a.AreaRadius = float64(ei.MiscValue)
+	}
 
 	if ei.AuraPeriod > 0 {
 		a.Effects = append(a.Effects, aura.AuraEffect{

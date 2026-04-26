@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Arcane Missiles spell info definition
 The system SHALL define a SpellInfo for Arcane Missiles (ID 5143) with: instant cast (CastTime=0), 3000ms channel duration, 85 mana cost, 30yd range, IsChanneled=true, AttrChanneled+AttrBreakOnMove attributes, and one effect of type EffectApplyAura with AuraPeriodicTriggerSpell aura type, 1000ms period, TriggerSpellID=7268.
@@ -42,3 +42,28 @@ The skill package SHALL include an arcane_missiles_timeline_test.go that indepen
 #### Scenario: Timeline output shows complete event sequence
 - **WHEN** the timeline test runs
 - **THEN** the rendered timeline SHALL show events in order: SpellCastStart at 0ms, SpellLaunch at 0ms, SpellHit at 1000ms, SpellHit at 2000ms, SpellHit at 3000ms, AuraExpired at 3000ms
+
+### Requirement: Arcane Missiles uses Registry hooks exclusively
+
+Arcane Missiles' RegisterScripts SHALL only register `AuraHookOnPeriodic` for missile triggering. No `HookOnSpellLaunch` (aura creation) or `HookOnSpellCancel` (aura cleanup) hooks SHALL be needed — the effect pipeline and Cancel() handle these automatically.
+
+#### Scenario: RegisterScripts only registers AuraHookOnPeriodic
+- **WHEN** Arcane Missiles RegisterScripts is called
+- **THEN** it SHALL only register `AuraHookOnPeriodic` via `registry.RegisterAuraHook`
+- **AND** no `HookOnSpellLaunch` or `HookOnSpellCancel` hooks SHALL be registered
+
+#### Scenario: Aura created automatically by effect pipeline
+- **WHEN** Arcane Missiles is cast
+- **THEN** the PeriodicTriggerSpell aura SHALL be created by the effect pipeline during Cast(), not by RegisterScripts
+
+#### Scenario: Cancel cleanup is automatic
+- **WHEN** Arcane Missiles channel is cancelled
+- **THEN** the aura SHALL be removed by Cancel()'s SpellID-based cleanup, not by a skill-registered hook
+
+### Requirement: Arcane Missiles aura created via effect pipeline
+
+Arcane Missiles' PeriodicTriggerSpell aura SHALL be created through the EffectApplyAura effect pipeline (data-driven), not through manual `aura.NewAura()` construction.
+
+#### Scenario: No manual aura.NewAura in RegisterScripts
+- **WHEN** reviewing Arcane Missiles RegisterScripts
+- **THEN** no `aura.NewAura()` calls SHALL be present
