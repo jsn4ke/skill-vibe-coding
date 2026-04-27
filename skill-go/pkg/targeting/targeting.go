@@ -7,6 +7,7 @@ import (
 	"skill-go/pkg/spell"
 )
 
+// SelectionCategory 表示目标选择方式的分类。
 type SelectionCategory uint8
 
 const (
@@ -18,6 +19,7 @@ const (
 	SelectLine
 )
 
+// CheckType 表示目标检查类型（敌我关系）。
 type CheckType uint8
 
 const (
@@ -30,6 +32,7 @@ const (
 	CheckAny
 )
 
+// Descriptor 描述目标选择的参数。
 type Descriptor struct {
 	Selection SelectionCategory
 	Check     CheckType
@@ -39,19 +42,23 @@ type Descriptor struct {
 	ConeAngle  float64
 }
 
+// TargetSelector 根据描述符选择目标。
 type TargetSelector struct {
 	entities []Targetable
 }
 
+// Targetable 是可被选为目标的实体接口。
 type Targetable interface {
 	GetEntity() *entity.Entity
 	IsAlive() bool
 }
 
+// NewSelector 创建一个目标选择器。
 func NewSelector(entities []Targetable) *TargetSelector {
 	return &TargetSelector{entities: entities}
 }
 
+// Select 根据施法者、描述符和排除 ID 选择目标。
 func (ts *TargetSelector) Select(caster *entity.Entity, desc Descriptor, excludeID uint64) []*entity.Entity {
 	var candidates []*entity.Entity
 
@@ -85,6 +92,7 @@ func (ts *TargetSelector) Select(caster *entity.Entity, desc Descriptor, exclude
 	}
 }
 
+// passesCheck 检查目标是否通过敌我关系过滤。
 func (ts *TargetSelector) passesCheck(caster, target *entity.Entity, check CheckType) bool {
 	switch check {
 	case CheckEnemy:
@@ -98,6 +106,7 @@ func (ts *TargetSelector) passesCheck(caster, target *entity.Entity, check Check
 	}
 }
 
+// selectDefault 选择默认目标（截取到 MaxTargets）。
 func (ts *TargetSelector) selectDefault(candidates []*entity.Entity, desc Descriptor) []*entity.Entity {
 	if desc.MaxTargets > 0 && int(desc.MaxTargets) < len(candidates) {
 		return candidates[:desc.MaxTargets]
@@ -105,6 +114,7 @@ func (ts *TargetSelector) selectDefault(candidates []*entity.Entity, desc Descri
 	return candidates
 }
 
+// selectNearby 选择施法者附近的存活目标，按距离排序。
 func (ts *TargetSelector) selectNearby(caster *entity.Entity, candidates []*entity.Entity, desc Descriptor) []*entity.Entity {
 	var result []*entity.Entity
 	for _, e := range candidates {
@@ -120,6 +130,7 @@ func (ts *TargetSelector) selectNearby(caster *entity.Entity, candidates []*enti
 	return result
 }
 
+// selectArea 选择施法者区域内的目标（不排序）。
 func (ts *TargetSelector) selectArea(caster *entity.Entity, candidates []*entity.Entity, desc Descriptor) []*entity.Entity {
 	var result []*entity.Entity
 	for _, e := range candidates {
@@ -134,6 +145,7 @@ func (ts *TargetSelector) selectArea(caster *entity.Entity, candidates []*entity
 	return result
 }
 
+// selectCone 选择施法者前方锥形区域内的目标。
 func (ts *TargetSelector) selectCone(caster *entity.Entity, candidates []*entity.Entity, desc Descriptor) []*entity.Entity {
 	var result []*entity.Entity
 	halfAngle := desc.ConeAngle / 2.0
@@ -153,6 +165,7 @@ func (ts *TargetSelector) selectCone(caster *entity.Entity, candidates []*entity
 	return result
 }
 
+// selectChain 选择链式目标，按距离排序后截取。
 func (ts *TargetSelector) selectChain(caster *entity.Entity, candidates []*entity.Entity, desc Descriptor) []*entity.Entity {
 	sortByDistance(candidates, caster)
 	maxTargets := int(desc.MaxTargets)
@@ -165,6 +178,7 @@ func (ts *TargetSelector) selectChain(caster *entity.Entity, candidates []*entit
 	return candidates[:maxTargets]
 }
 
+// isInCone 判断目标是否在原点的锥形范围内。
 func isInCone(origin entity.Position, target entity.Position, halfAngle float64) bool {
 	dx := target.X - origin.X
 	dy := target.Y - origin.Y
@@ -179,6 +193,7 @@ func isInCone(origin entity.Position, target entity.Position, halfAngle float64)
 	return math.Abs(diff) <= halfAngle
 }
 
+// sortByDistance 使用插入排序按到原点的二维距离排序。
 func sortByDistance(entities []*entity.Entity, origin *entity.Entity) {
 	for i := 1; i < len(entities); i++ {
 		for j := i; j > 0; j-- {
@@ -191,6 +206,7 @@ func sortByDistance(entities []*entity.Entity, origin *entity.Entity) {
 	}
 }
 
+// SelectAroundPoint 选择指定中心点周围的目标，用于 AoE 法术的目标选择。
 func (ts *TargetSelector) SelectAroundPoint(caster *entity.Entity, center entity.Position, candidates []Targetable, desc Descriptor, excludeID uint64) []*entity.Entity {
 	var result []*entity.Entity
 	for _, t := range candidates {
@@ -215,6 +231,7 @@ func (ts *TargetSelector) SelectAroundPoint(caster *entity.Entity, center entity
 	return result
 }
 
+// DescriptorFromTarget 将隐式目标类型转换为目标选择描述符。
 func DescriptorFromTarget(target spell.ImplicitTarget) Descriptor {
 	switch target {
 	case spell.TargetUnitTargetEnemy:

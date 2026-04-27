@@ -8,10 +8,10 @@ import (
 	"skill-go/pkg/unit"
 )
 
-// Spell 10 — Blizzard (channeled AoE)
-// Engine-driven: cast via eng.CastSpell(caster, &Info, engine.WithDestPos(x,y,z))
-// The effect pipeline automatically creates the area aura during Cast().
-// No RegisterScripts needed — aura creation and cancel cleanup are fully automatic.
+// 法术 10 — 暴风雪（引导 AoE）
+// 引擎驱动：通过 eng.CastSpell(caster, &Info, engine.WithDestPos(x,y,z)) 施放
+// 效果管线在 Cast() 时自动创建区域光环。
+// 无需 RegisterScripts — 光环创建和取消清理完全自动。
 var Info = spell.SpellInfo{
 	ID:          10,
 	Name:        "Blizzard",
@@ -38,6 +38,5 @@ var Info = spell.SpellInfo{
 	},
 }
 
-// RegisterScripts is a no-op for Blizzard. Aura creation and cancel cleanup
-// are handled automatically by the effect pipeline and Cancel().
+// RegisterScripts 对暴风雪是空操作。光环创建和取消清理由效果管线和 Cancel() 自动处理。
 func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.Engine) {}

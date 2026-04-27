@@ -4,6 +4,7 @@ import (
 	"time"
 )
 
+// Group 表示递减返回的分组类型，对齐 TC 的 DiminishingGroup。
 type Group uint8
 
 const (
@@ -21,6 +22,7 @@ const (
 	GroupSlow
 )
 
+// ReturnType 表示递减返回的结果类型。
 type ReturnType uint8
 
 const (
@@ -31,6 +33,7 @@ const (
 	ReturnImmune
 )
 
+// Level 定义一个递减分组的规则，包含最大层数和持续时间上限。
 type Level struct {
 	Group      Group
 	ReturnType ReturnType
@@ -38,6 +41,7 @@ type Level struct {
 	DurLimit   time.Duration
 }
 
+// Entry 记录一次递减效果的应用，用于追踪递减层数。
 type Entry struct {
 	Group    Group
 	CasterID uint64
@@ -47,11 +51,13 @@ type Entry struct {
 	MaxDur   time.Duration
 }
 
+// Manager 管理递减返回系统，对齐 TC 的 DiminishingReturnManager。
 type Manager struct {
 	levels  map[Group]Level
 	entries map[uint64][]Entry
 }
 
+// NewManager 创建一个空的递减返回管理器。
 func NewManager() *Manager {
 	return &Manager{
 		levels:  make(map[Group]Level),
@@ -59,10 +65,14 @@ func NewManager() *Manager {
 	}
 }
 
+// RegisterLevel 注册一个递减分组的规则。
 func (m *Manager) RegisterLevel(level Level) {
 	m.levels[level.Group] = level
 }
 
+// ApplyDiminishing 对目标应用递减返回计算，返回修改后的持续时间和是否免疫。
+// 递减规则：第 0 层全时长，第 1 层半时长，第 2 层四分之一时长，第 3 层及以上免疫。
+// 18 秒内的同组应用计入递减层数，对齐 TC 的 DR 窗口。
 func (m *Manager) ApplyDiminishing(targetID, casterID uint64, group Group, duration time.Duration) (time.Duration, bool) {
 	if group == GroupNone {
 		return duration, false
@@ -117,6 +127,7 @@ func (m *Manager) ApplyDiminishing(targetID, casterID uint64, group Group, durat
 	return modifiedDuration, false
 }
 
+// GetLevel 获取目标在指定分组中的当前递减层数。
 func (m *Manager) GetLevel(targetID uint64, group Group) uint8 {
 	entries := m.entries[targetID]
 	now := time.Now()
@@ -129,6 +140,7 @@ func (m *Manager) GetLevel(targetID uint64, group Group) uint8 {
 	return count
 }
 
+// Clear 清除目标的所有递减记录。
 func (m *Manager) Clear(targetID uint64) {
 	delete(m.entries, targetID)
 }

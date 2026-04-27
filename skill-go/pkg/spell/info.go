@@ -1,46 +1,46 @@
 package spell
 
+// SpellAttribute 是法术属性的位掩码。
 type SpellAttribute uint32
 
 const (
 	AttrNone          SpellAttribute = 0
 	AttrPassive       SpellAttribute = 1 << iota
 	AttrAllowWhileDead
-	_ // removed: AttrBreakOnMove — use InterruptFlags instead
+	_ // 已移除: AttrBreakOnMove — 使用 InterruptFlags 替代
 	AttrChanneled
 	AttrInstant
 )
 
-// SpellInterruptFlags controls interrupt conditions during cast/channel.
-// Aligned with TC's SpellInterruptFlags bitmask.
+// SpellInterruptFlags 控制施法/引导期间的打断条件，对齐 TC 的 SpellInterruptFlags 位掩码。
 type SpellInterruptFlags uint32
 
 const (
 	InterruptNone            SpellInterruptFlags = 0
-	InterruptMovement        SpellInterruptFlags = 1 << iota // cancel on caster movement
-	InterruptDamageCancels                                    // cancel on damage taken
-	InterruptDamagePushback                                   // pushback cast time on damage (placeholder)
+	InterruptMovement        SpellInterruptFlags = 1 << iota // 施法者移动时取消
+	InterruptDamageCancels                                    // 受到伤害时取消
+	InterruptDamagePushback                                   // 受到伤害时推回施法时间（占位）
 )
 
 func (f SpellInterruptFlags) HasFlag(flag SpellInterruptFlags) bool {
 	return f&flag != 0
 }
 
-// SpellAuraInterruptFlags controls when auras are removed by external events.
-// Aligned with TC's SpellAuraInterruptFlags bitmask.
+// SpellAuraInterruptFlags 控制光环被外部事件移除的条件，对齐 TC 的 SpellAuraInterruptFlags 位掩码。
 type SpellAuraInterruptFlags uint32
 
 const (
 	AuraInterruptNone        SpellAuraInterruptFlags = 0
-	AuraInterruptOnMovement  SpellAuraInterruptFlags = 1 << iota // remove on carrier movement
-	AuraInterruptOnDamage                                        // remove on carrier taking damage
-	AuraInterruptOnAction                                        // remove on carrier performing action
+	AuraInterruptOnMovement  SpellAuraInterruptFlags = 1 << iota // 承载者移动时移除
+	AuraInterruptOnDamage                                        // 承载者受到伤害时移除
+	AuraInterruptOnAction                                        // 承载者执行动作时移除
 )
 
 func (f SpellAuraInterruptFlags) HasFlag(flag SpellAuraInterruptFlags) bool {
 	return f&flag != 0
 }
 
+// SpellInfo 定义法术的静态信息。
 type SpellInfo struct {
 	ID           SpellID
 	Name         string
@@ -65,6 +65,7 @@ func (si *SpellInfo) HasAttribute(attr SpellAttribute) bool {
 	return si.Attributes&attr != 0
 }
 
+// SpellEffectInfo 定义法术效果的静态信息。
 type SpellEffectInfo struct {
 	EffectIndex    uint8
 	EffectType     EffectType
@@ -81,6 +82,7 @@ type SpellEffectInfo struct {
 	TargetB             ImplicitTarget
 }
 
+// EffectType 表示效果类型的枚举。
 type EffectType uint16
 
 const (
@@ -102,6 +104,7 @@ const (
 	EffectDispel
 )
 
+// ImplicitTarget 表示隐式目标类型的枚举。
 type ImplicitTarget uint16
 
 const (
@@ -124,8 +127,7 @@ const (
 	TargetUnitChainAlly
 )
 
-// IsAreaTarget returns true if the implicit target type represents an area effect
-// (AoE, cone, or chain targeting) that needs area aura handling.
+// IsAreaTarget 判断隐式目标类型是否为区域效果（AoE、锥形或链式），需要区域光环处理。
 func IsAreaTarget(t ImplicitTarget) bool {
 	switch t {
 	case TargetUnitAreaEnemy, TargetUnitAreaAlly, TargetUnitConeEnemy, TargetUnitChainEnemy, TargetUnitChainAlly:
@@ -134,6 +136,7 @@ func IsAreaTarget(t ImplicitTarget) bool {
 	return false
 }
 
+// HitResult 表示命中结果的枚举。
 type HitResult uint8
 
 const (

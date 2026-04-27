@@ -18,8 +18,8 @@ import (
 
 // Ensure effect handlers are registered (effect.init sets spell.ProcessEffectsFn)
 
-// It is the sole driver of time progression via Tick(diff).
-// Reference: tc-references/unit-update-architecture.md
+// Engine 是模拟引擎，是时间推进的唯一驱动者。
+// 参考：tc-references/unit-update-architecture.md
 type Engine struct {
 	units    map[uint64]*unit.Unit
 	bus      *event.Bus
@@ -27,21 +27,21 @@ type Engine struct {
 	auraMgr  *aura.Manager
 	renderer *timeline.TimelineRenderer
 
-	// currentTime accumulates with each Tick
+	// currentTime 随每次 Tick 累加的模拟时间
 	currentTime time.Duration
 
-	// nextUnitID for auto-generating unit IDs
+	// nextUnitID 自动生成的单位 ID
 	nextUnitID uint64
 }
 
-// New creates a new Engine with all subsystems initialized.
+// New 创建一个新的引擎，初始化所有子系统。
 func New() *Engine {
 	bus := event.NewBus()
 	reg := script.NewRegistry()
 	auraMgr := aura.NewManager(bus)
 	auraMgr.SetRegistry(reg)
 
-	// Wire effect pipeline to use the engine's script registry
+	// 将效果管线连接到引擎的脚本注册中心
 	effect.ScriptRegistry = reg
 
 	r := timeline.NewRenderer()
@@ -57,7 +57,7 @@ func New() *Engine {
 	}
 }
 
-// AddUnit creates and registers a new Unit in the engine.
+// AddUnit 创建并注册一个新单位到引擎中。
 func (e *Engine) AddUnit(ent *entity.Entity, stats *stat.StatSet) *unit.Unit {
 	u := unit.NewUnit(ent, stats, cooldown.NewHistory())
 	u.SetEngine(e)
@@ -65,7 +65,7 @@ func (e *Engine) AddUnit(ent *entity.Entity, stats *stat.StatSet) *unit.Unit {
 	return u
 }
 
-// AddUnitWithID creates and registers a Unit with a specific entity ID.
+// AddUnitWithID 创建并注册一个指定实体 ID 的单位。
 func (e *Engine) AddUnitWithID(id uint64, ent *entity.Entity, stats *stat.StatSet) *unit.Unit {
 	u := unit.NewUnit(ent, stats, cooldown.NewHistory())
 	u.SetEngine(e)
@@ -73,17 +73,17 @@ func (e *Engine) AddUnitWithID(id uint64, ent *entity.Entity, stats *stat.StatSe
 	return u
 }
 
-// GetUnit returns a Unit by ID.
+// GetUnit 按 ID 获取单位。
 func (e *Engine) GetUnit(id uint64) *unit.Unit {
 	return e.units[id]
 }
 
-// RemoveUnit removes a Unit from the engine.
+// RemoveUnit 从引擎中移除一个单位。
 func (e *Engine) RemoveUnit(id uint64) {
 	delete(e.units, id)
 }
 
-// GetUnitsInRadius returns all units within radius of center, excluding excludeID.
+// GetUnitsInRadius 返回中心点指定半径内的所有单位，排除 excludeID。
 func (e *Engine) GetUnitsInRadius(center [3]float64, radius float64, excludeID uint64) []*unit.Unit {
 	var result []*unit.Unit
 	for _, u := range e.units {
@@ -102,10 +102,10 @@ func (e *Engine) GetUnitsInRadius(center [3]float64, radius float64, excludeID u
 	return result
 }
 
-// GetBus returns the event bus.
+// GetBus 返回事件总线。
 func (e *Engine) GetBus() interface{} { return e.bus }
 
-// GetSpellPower returns the spell power stat for a given caster.
+// GetSpellPower 返回指定施法者的法术强度属性。
 func (e *Engine) GetSpellPower(casterID uint64) float64 {
 	u := e.units[casterID]
 	if u == nil {
@@ -114,31 +114,29 @@ func (e *Engine) GetSpellPower(casterID uint64) float64 {
 	return u.Stats.Get(stat.SpellPower)
 }
 
-// Tick returns current simulation time.
+// Tick 返回当前模拟时间。
 func (e *Engine) Tick() time.Duration { return e.currentTime }
 
-// Registry returns the script registry.
+// Registry 返回脚本注册中心。
 func (e *Engine) Registry() *script.Registry { return e.registry }
 
-// AuraMgr returns the aura manager.
+// AuraMgr 返回光环管理器。
 func (e *Engine) AuraMgr() *aura.Manager { return e.auraMgr }
 
-// Renderer returns the timeline renderer.
+// Renderer 返回时间线渲染器。
 func (e *Engine) Renderer() *timeline.TimelineRenderer { return e.renderer }
 
-// Bus returns the event bus.
+// Bus 返回事件总线。
 func (e *Engine) Bus() *event.Bus { return e.bus }
 
-// Simulate advances the simulation by totalMs milliseconds in steps of stepMs.
-// This replaces the manual for-loop in tests.
+// Simulate 以指定步长推进模拟指定总时长。替代测试中的手动循环。
 func (e *Engine) Simulate(totalMs int32, stepMs int32) {
 	for simMs := int32(0); simMs < totalMs; simMs += stepMs {
 		e.Advance(stepMs)
 	}
 }
 
-// Advance advances the simulation by diffMs.
-// This is the core Tick — aligned with TC's Map::Update.
+// Advance 推进模拟 diffMs 毫秒。这是核心 Tick，对齐 TC 的 Map::Update。
 func (e *Engine) Advance(diffMs int32) {
 	e.currentTime += time.Duration(diffMs) * time.Millisecond
 	e.renderer.SetTime(e.currentTime)
@@ -148,9 +146,9 @@ func (e *Engine) Advance(diffMs int32) {
 	}
 }
 
-// --- CastSpell: Three execution paths (aligned with TC's Spell::prepare) ---
+// --- CastSpell：三条执行路径（对齐 TC 的 Spell::prepare）---
 
-// CastOption configures a spell cast.
+// CastOption 配置法术施放的选项。
 type CastOption func(*castConfig)
 
 type castConfig struct {
@@ -163,22 +161,22 @@ type castConfig struct {
 	triggered   bool
 }
 
-// WithTarget sets the unit target for the spell.
+// WithTarget 设置法术的单位目标。
 func WithTarget(targetID uint64) CastOption {
 	return func(c *castConfig) { c.targetID = targetID }
 }
 
-// WithDestPos sets the destination position for the spell.
+// WithDestPos 设置法术的目标位置。
 func WithDestPos(x, y, z float64) CastOption {
 	return func(c *castConfig) { c.destPos = [3]float64{x, y, z} }
 }
 
-// WithSpellValues sets spell values for script communication.
+// WithSpellValues 设置法术值，用于脚本间通信。
 func WithSpellValues(sv map[uint8]float64) CastOption {
 	return func(c *castConfig) { c.spellValues = sv }
 }
 
-// WithAoE sets AoE targeting parameters.
+// WithAoE 设置 AoE 目标选择参数。
 func WithAoE(selector spell.AoESelector, center [3]float64, excludeID uint64) CastOption {
 	return func(c *castConfig) {
 		c.aoeSelector = selector
@@ -187,16 +185,16 @@ func WithAoE(selector spell.AoESelector, center [3]float64, excludeID uint64) Ca
 	}
 }
 
-// WithTriggered marks the spell as triggered (ignores GCD, cooldown, power).
+// WithTriggered 标记法术为触发的（忽略 GCD、冷却、资源消耗）。
 func WithTriggered() CastOption {
 	return func(c *castConfig) { c.triggered = true }
 }
 
-// CastSpell creates a spell and executes it following TC's three-path model.
+// CastSpell 创建法术并按 TC 三路径模型执行。
 //
-// Path A (triggered instant): sync completion, no registration.
-// Path B (normal instant): sync completion with registration.
-// Path C (delayed): registration + timer, driven by Engine.Advance.
+// 路径 A（触发即时）：同步完成，无需注册。
+// 路径 B（普通即时）：同步完成并注册。
+// 路径 C（延迟）：注册 + 定时器，由 Engine.Advance 驱动。
 func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...CastOption) *spell.Spell {
 	cfg := &castConfig{}
 	for _, opt := range opts {
@@ -210,9 +208,9 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 
 	s := spell.NewSpell(spell.SpellID(info.ID), info, caster, flags)
 	s.Bus = e.bus
-	s.Engine = e // Wire engine reference for interrupt checks
+	s.Engine = e // 连接引擎引用，用于打断检查
 
-	// Wire OnAuraCreated so the effect pipeline can register auras automatically
+	// 连接 OnAuraCreated，使效果管线能自动注册光环
 	s.OnAuraCreated = func(a interface{}) {
 		aura := a.(*aura.Aura)
 		owner := e.GetUnit(aura.CasterID)
@@ -237,7 +235,7 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 		s.AoEExcludeID = cfg.aoeExclude
 	}
 
-	// Prepare validates and sets state
+	// Prepare 验证并设置状态
 	result := s.Prepare()
 	if result != spell.CastOK {
 		fmt.Printf("[engine] CastSpell %s failed: %v\n", info.Name, result)
@@ -248,27 +246,25 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 	isNormalInstant := !isTriggeredInstant && s.CastTime == 0 && !info.IsChanneled && info.Speed == 0 && info.LaunchDelay == 0
 
 	if isTriggeredInstant {
-		// Path A: triggered instant — sync, no registration needed
-		// Spell already completed inside Prepare() → Cast() → HandleImmediate() → Finish()
+		// 路径 A：触发即时 — 同步完成，无需注册
 	} else if isNormalInstant {
-		// Path B: normal instant — sync with registration
+		// 路径 B：普通即时 — 同步完成并注册
 		caster.AddActiveSpell(s)
-		// Spell already completed inside Prepare() for instant cast
 	} else {
-		// Path C: delayed — register and let Advance() drive it
+		// 路径 C：延迟 — 注册并由 Advance() 驱动
 		caster.AddActiveSpell(s)
 	}
 
 	return s
 }
 
-// Ensure Engine implements unit.EngineRef
+// 确保 Engine 实现 unit.EngineRef 接口
 var _ unit.EngineRef = (*Engine)(nil)
 
-// ScriptRegistry returns the script registry, satisfying unit.EngineRef.
+// ScriptRegistry 返回脚本注册中心，满足 unit.EngineRef 接口。
 func (e *Engine) ScriptRegistry() *script.Registry { return e.registry }
 
-// Ensure Engine implements spell.SpellEngineRef for interrupt checks
+// GetCasterUnit 按 ID 获取施法者单位，满足 spell.SpellEngineRef 接口。
 func (e *Engine) GetCasterUnit(id uint64) spell.CasterUnit {
 	u := e.units[id]
 	if u == nil {
@@ -289,7 +285,7 @@ func (e *Engine) CallCancelHook(spellID spell.SpellID, s *spell.Spell) {
 	e.registry.CallSpellHook(spellID, script.HookOnSpellCancel, &script.SpellContext{Spell: s})
 }
 
-// auraRemover adapts engine to spell.AuraRemover for channel aura cleanup.
+// auraRemover 将引擎适配为 spell.AuraRemover，用于引导法术的光环清理。
 type auraRemover struct {
 	engine *Engine
 }
@@ -308,14 +304,14 @@ func (r *auraRemover) RemoveAuraFromChannel(ownerID uint64, targetID uint64, spe
 	}
 }
 
-// RemoveOwnedAurasBySpellID removes all auras matching spellID from the caster's owned list.
-// Used by Cancel() to clean up channel spell auras without depending on TargetInfos.
+// RemoveOwnedAurasBySpellID 移除施法者拥有的所有匹配 SpellID 的光环。
+// 用于 Cancel() 清理引导法术光环，不依赖 TargetInfos。
 func (e *Engine) RemoveOwnedAurasBySpellID(casterID uint64, spellID spell.SpellID) {
 	caster := e.GetUnit(casterID)
 	if caster == nil {
 		return
 	}
-	// Collect matching auras first (avoid mutating during iteration)
+	// 先收集匹配的光环（避免遍历中修改）
 	var toRemove []*aura.Aura
 	for _, a := range caster.GetOwnedAuras() {
 		if a.SpellID == spellID {

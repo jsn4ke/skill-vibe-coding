@@ -5,9 +5,9 @@ import (
 	"skill-go/pkg/spell"
 )
 
-// Spell 25306 — Fireball
-// Engine-driven: cast via eng.CastSpell(caster, &Info, engine.WithTarget(id))
-// EffectApplyAura (index 1) creates DoT aura automatically via effect pipeline + OnAuraCreated.
+// 法术 25306 — 火球术
+// 引擎驱动：通过 eng.CastSpell(caster, &Info, engine.WithTarget(id)) 施放
+// EffectApplyAura（索引 1）通过效果管线 + OnAuraCreated 自动创建 DoT 光环。
 var Info = spell.SpellInfo{
 	ID:         25306,
 	Name:       "Fireball",

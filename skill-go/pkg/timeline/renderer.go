@@ -8,6 +8,7 @@ import (
 	"skill-go/pkg/event"
 )
 
+// TimelineEvent 表示时间线中的一个事件记录。
 type TimelineEvent struct {
 	Index    int
 	Time     time.Duration
@@ -19,20 +20,24 @@ type TimelineEvent struct {
 	Extra    map[string]any
 }
 
+// TimelineRenderer 收集并渲染时间线事件，用于测试和调试。
 type TimelineRenderer struct {
 	events  []TimelineEvent
 	simTime time.Duration
 	index   int
 }
 
+// NewRenderer 创建一个新的时间线渲染器。
 func NewRenderer() *TimelineRenderer {
 	return &TimelineRenderer{}
 }
 
+// SetTime 设置当前模拟时间。
 func (r *TimelineRenderer) SetTime(t time.Duration) {
 	r.simTime = t
 }
 
+// record 记录一个事件到时间线。
 func (r *TimelineRenderer) record(e event.Event) {
 	r.index++
 	r.events = append(r.events, TimelineEvent{
@@ -47,6 +52,7 @@ func (r *TimelineRenderer) record(e event.Event) {
 	})
 }
 
+// SubscribeAll 订阅所有施法和光环相关事件。
 func (r *TimelineRenderer) SubscribeAll(bus *event.Bus) {
 	types := []event.EventType{
 		event.OnSpellCastStart,
@@ -66,6 +72,7 @@ func (r *TimelineRenderer) SubscribeAll(bus *event.Bus) {
 	}
 }
 
+// Render 将时间线渲染为格式化的文本表格。
 func (r *TimelineRenderer) Render() string {
 	if len(r.events) == 0 {
 		return "No events recorded."

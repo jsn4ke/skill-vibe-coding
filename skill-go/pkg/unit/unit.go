@@ -11,35 +11,30 @@ import (
 	"time"
 )
 
-// Unit is the central entity for combat simulation, aligned with TC's Unit class.
-// Each Unit holds its own active spells, owned auras, and applied auras.
-// Reference: tc-references/unit-update-architecture.md
+// Unit 是战斗模拟的核心实体，对齐 TC 的 Unit 类。
+// 每个 Unit 持有自己的活跃法术、拥有的光环和施加的光环。
+// 参考：tc-references/unit-update-architecture.md
 type Unit struct {
 	Entity   *entity.Entity
 	Stats    *stat.StatSet
 	History  *cooldown.History
 	engine   EngineRef
 
-	// activeSpells — spells currently being cast, channeled, or in flight by this Unit.
-	// Aligned with TC's m_currentSpells.
+	// activeSpells — 当前正在施放、引导或飞行中的法术，对齐 TC 的 m_currentSpells。
 	activeSpells []*spell.Spell
 
-	// ownedAuras — auras created by this Unit. This Unit drives their tick and expiry.
-	// Aligned with TC's m_ownedAuras.
+	// ownedAuras — 此 Unit 创建的光环。此 Unit 驱动其 tick 和过期，对齐 TC 的 m_ownedAuras。
 	ownedAuras []*aura.Aura
 
-	// appliedAuras — auras currently affecting this Unit.
-	// Aligned with TC's m_appliedAuras.
+	// appliedAuras — 当前影响此 Unit 的光环，对齐 TC 的 m_appliedAuras。
 	appliedAuras []*aura.Aura
 
-	// Movement tracking — position change detection per frame.
-	// Aligned with TC's _positionUpdateInfo.Relocated.
+	// 移动追踪 — 每帧检测位置变化，对齐 TC 的 _positionUpdateInfo.Relocated。
 	prevPos  entity.Position
 	isMoving bool
 }
 
-// EngineRef is an interface to avoid circular dependency between Unit and Engine.
-// Engine implements this interface.
+// EngineRef 是避免 Unit 和 Engine 循环依赖的接口。Engine 实现此接口。
 type EngineRef interface {
 	GetUnit(id uint64) *Unit
 	GetUnitsInRadius(center [3]float64, radius float64, excludeID uint64) []*Unit
@@ -50,7 +45,7 @@ type EngineRef interface {
 	ScriptRegistry() *script.Registry
 }
 
-// NewUnit creates a new Unit with the given entity and stats.
+// NewUnit 创建一个新 Unit，使用指定的实体和属性。
 func NewUnit(ent *entity.Entity, stats *stat.StatSet, history *cooldown.History) *Unit {
 	return &Unit{
 		Entity:  ent,
@@ -59,29 +54,27 @@ func NewUnit(ent *entity.Entity, stats *stat.StatSet, history *cooldown.History)
 	}
 }
 
-// SetEngine sets the engine back-reference. Called by Engine during AddUnit.
+// SetEngine 设置引擎反向引用。由 Engine 在 AddUnit 时调用。
 func (u *Unit) SetEngine(e EngineRef) {
 	u.engine = e
 }
 
-// ID returns the unit's entity ID.
+// ID 返回单位的实体 ID。
 func (u *Unit) ID() uint64 {
 	return uint64(u.Entity.ID)
 }
 
-// Update drives this Unit's spell and aura updates for one tick.
-// Order matches TC's Unit::_UpdateSpells:
-//  1. Update active spells (clean finished first, then drive remaining)
-//  2. Update owned auras (tick periodic, clean expired)
-//  3. Detect movement and trigger aura interrupts
+// Update 驱动此 Unit 的法术和光环更新，顺序对齐 TC 的 Unit::_UpdateSpells：
+//  1. 更新活跃法术（先清理已完成的，再驱动剩余的）
+//  2. 更新拥有的光环（tick 周期效果，清理已过期的）
+//  3. 检测移动并触发光环打断
 //
-// Reference: TC Unit.cpp:2952-2986, Unit::InterruptMovementBasedAuras
+// 参考：TC Unit.cpp:2952-2986, Unit::InterruptMovementBasedAuras
 func (u *Unit) Update(diff int32) {
 	u.updateSpells(diff)
 	u.updateAuras(diff)
 
-	// Movement detection — compare current position to previous frame.
-	// Aligned with TC's _positionUpdateInfo.Relocated check.
+	// 移动检测 — 比较当前帧和前一帧的位置，对齐 TC 的 _positionUpdateInfo.Relocated 检查。
 	curPos := u.Entity.Pos
 	u.isMoving = curPos != u.prevPos
 	if u.isMoving {
@@ -90,14 +83,14 @@ func (u *Unit) Update(diff int32) {
 	u.prevPos = curPos
 }
 
-// --- spell.Caster interface implementation ---
+// --- spell.Caster 接口实现 ---
 
 func (u *Unit) GetID() uint64          { return u.ID() }
 func (u *Unit) IsAlive() bool          { return u.Entity.IsAlive() }
 func (u *Unit) CanCast() bool          { return u.Entity.CanCast() }
 func (u *Unit) IsMoving() bool { return u.isMoving }
 
-// SetPosition updates the unit's position. Movement detection happens in Update().
+// SetPosition 更新单位位置。移动检测在 Update() 中进行。
 func (u *Unit) SetPosition(pos entity.Position) {
 	u.Entity.Pos = pos
 }
@@ -129,27 +122,26 @@ func (u *Unit) ModifyPower(pt uint8, amount float64) bool {
 	return true
 }
 
-// --- Active Spell management ---
+// --- 活跃法术管理 ---
 
-// AddActiveSpell registers a spell to this Unit's active list.
+// AddActiveSpell 将法术注册到此 Unit 的活跃列表。
 func (u *Unit) AddActiveSpell(s *spell.Spell) {
 	u.activeSpells = append(u.activeSpells, s)
 }
 
-// RemoveActiveSpell removes a finished spell from the active list.
+// removeActiveSpell 从活跃列表中移除已完成的法术。
 func (u *Unit) removeActiveSpell(idx int) {
 	u.activeSpells = append(u.activeSpells[:idx], u.activeSpells[idx+1:]...)
 }
 
-// GetActiveSpells returns the list of currently active spells (read-only).
+// GetActiveSpells 返回当前活跃法术列表（只读）。
 func (u *Unit) GetActiveSpells() []*spell.Spell {
 	return u.activeSpells
 }
 
-// updateSpells drives all active spells and cleans up finished ones.
-// Order: clean finished → update remaining. Matches TC's _UpdateSpells.
+// updateSpells 驱动所有活跃法术并清理已完成的。顺序：先清理 → 再驱动，对齐 TC 的 _UpdateSpells。
 func (u *Unit) updateSpells(diff int32) {
-	// Clean finished spells first (TC: m_currentSpells cleanup at Unit.cpp:2961)
+	// 先清理已完成的法术（TC: m_currentSpells cleanup at Unit.cpp:2961）
 	i := 0
 	for i < len(u.activeSpells) {
 		if u.activeSpells[i].State == spell.StateFinished {
@@ -159,47 +151,47 @@ func (u *Unit) updateSpells(diff int32) {
 		i++
 	}
 
-	// Drive remaining active spells (TC: SpellEvent::Execute → Spell::update)
+	// 驱动剩余的活跃法术（TC: SpellEvent::Execute → Spell::update）
 	for _, s := range u.activeSpells {
 		s.Update(diff)
 	}
 }
 
-// --- Owned Aura management ---
+// --- 拥有的光环管理 ---
 
-// AddOwnedAura registers an aura created by this Unit.
+// AddOwnedAura 注册此 Unit 创建的光环。
 func (u *Unit) AddOwnedAura(a *aura.Aura) {
 	u.ownedAuras = append(u.ownedAuras, a)
 }
 
-// RemoveOwnedAura removes an aura from the owned list by index.
+// RemoveOwnedAura 按索引从拥有列表移除光环。
 func (u *Unit) RemoveOwnedAura(idx int) {
 	u.ownedAuras = append(u.ownedAuras[:idx], u.ownedAuras[idx+1:]...)
 }
 
-// GetOwnedAuras returns the list of auras owned by this Unit.
+// GetOwnedAuras 返回此 Unit 拥有的光环列表。
 func (u *Unit) GetOwnedAuras() []*aura.Aura {
 	return u.ownedAuras
 }
 
-// --- Applied Aura management ---
+// --- 施加的光环管理 ---
 
-// AddAppliedAura registers an aura affecting this Unit.
+// AddAppliedAura 注册影响此 Unit 的光环。
 func (u *Unit) AddAppliedAura(a *aura.Aura) {
 	u.appliedAuras = append(u.appliedAuras, a)
 }
 
-// RemoveAppliedAura removes an aura from the applied list by index.
+// RemoveAppliedAura 按索引从施加列表移除光环。
 func (u *Unit) RemoveAppliedAura(idx int) {
 	u.appliedAuras = append(u.appliedAuras[:idx], u.appliedAuras[idx+1:]...)
 }
 
-// GetAppliedAuras returns the list of auras applied to this Unit.
+// GetAppliedAuras 返回施加到此 Unit 的光环列表。
 func (u *Unit) GetAppliedAuras() []*aura.Aura {
 	return u.appliedAuras
 }
 
-// FindAppliedAura finds an aura on this Unit by spellID and casterID.
+// FindAppliedAura 按 spellID 和 casterID 查找施加到此 Unit 的光环。
 func (u *Unit) FindAppliedAura(spellID spell.SpellID, casterID uint64) *aura.Aura {
 	for _, a := range u.appliedAuras {
 		if a.SpellID == spellID && a.CasterID == casterID {
@@ -209,7 +201,7 @@ func (u *Unit) FindAppliedAura(spellID spell.SpellID, casterID uint64) *aura.Aur
 	return nil
 }
 
-// FindOwnedAura finds an aura owned by this Unit by spellID and targetID.
+// FindOwnedAura 按 spellID 和 targetID 查找此 Unit 拥有的光环。
 func (u *Unit) FindOwnedAura(spellID spell.SpellID, targetID uint64) *aura.Aura {
 	for _, a := range u.ownedAuras {
 		if a.SpellID == spellID && a.TargetID == targetID {
@@ -219,7 +211,7 @@ func (u *Unit) FindOwnedAura(spellID spell.SpellID, targetID uint64) *aura.Aura 
 	return nil
 }
 
-// FindAreaAura finds an area aura owned by this Unit by spellID.
+// FindAreaAura 按 spellID 查找此 Unit 拥有的区域光环。
 func (u *Unit) FindAreaAura(spellID spell.SpellID) *aura.Aura {
 	for _, a := range u.ownedAuras {
 		if a.IsAreaAura && a.SpellID == spellID {
@@ -229,16 +221,15 @@ func (u *Unit) FindAreaAura(spellID spell.SpellID) *aura.Aura {
 	return nil
 }
 
-// RemoveAurasWithInterruptFlags removes all owned auras whose InterruptFlags
-// match the given flag, using RemoveByInterrupt mode.
-// Also checks the current channeled spell for matching interrupt flag.
-// Aligned with TC's Unit::RemoveAurasWithInterruptFlags.
+// RemoveAurasWithInterruptFlags 移除所有 InterruptFlags 匹配指定标志的拥有光环，
+// 使用 RemoveByInterrupt 模式。同时检查当前引导法术是否匹配打断标志。
+// 对齐 TC 的 Unit::RemoveAurasWithInterruptFlags。
 func (u *Unit) RemoveAurasWithInterruptFlags(flag spell.SpellAuraInterruptFlags) {
 	if flag == spell.AuraInterruptNone {
 		return
 	}
 
-	// Collect matching auras first (avoid mutating during iteration)
+	// 先收集匹配的光环（避免遍历中修改）
 	var toRemove []*aura.Aura
 	for _, a := range u.ownedAuras {
 		if a.InterruptFlags.HasFlag(flag) {
@@ -246,7 +237,7 @@ func (u *Unit) RemoveAurasWithInterruptFlags(flag spell.SpellAuraInterruptFlags)
 		}
 	}
 
-	// Remove matching auras via aura manager
+	// 通过光环管理器移除匹配的光环
 	if u.engine != nil {
 		mgr := u.engine.AuraMgr()
 		for _, a := range toRemove {
@@ -258,7 +249,7 @@ func (u *Unit) RemoveAurasWithInterruptFlags(flag spell.SpellAuraInterruptFlags)
 		}
 	}
 
-	// Check channeled spell for matching channel interrupt
+	// 检查引导法术是否匹配引导打断标志
 	for _, s := range u.activeSpells {
 		if s.State == spell.StateChanneling && s.Info.InterruptFlags.HasFlag(spell.InterruptMovement) {
 			s.Cancel()
@@ -267,15 +258,15 @@ func (u *Unit) RemoveAurasWithInterruptFlags(flag spell.SpellAuraInterruptFlags)
 	}
 }
 
-// updateAuras ticks all owned periodic auras and removes expired ones.
-// Matches TC's owned aura update loop (Unit.cpp:2971-2986).
+// updateAuras tick 所有拥有的周期光环并移除已过期的。
+// 对齐 TC 的拥有光环更新循环（Unit.cpp:2971-2986）。
 func (u *Unit) updateAuras(diff int32) {
 	elapsed := time.Duration(diff) * time.Millisecond
 	sp := u.Stats.Get(stat.SpellPower)
 	bus := u.getBus()
 
-	// Iterate with defensive cleanup (TC: m_auraUpdateIterator pattern)
-	// First pass: tick all owned auras
+	// 防御性清理迭代（TC: m_auraUpdateIterator 模式）
+	// 第一遍：tick 所有拥有的光环
 	var expired []*aura.Aura
 	for _, a := range u.ownedAuras {
 		a.Elapsed += elapsed
@@ -293,7 +284,7 @@ func (u *Unit) updateAuras(diff int32) {
 		}
 	}
 
-	// Second pass: remove expired auras (TC: expired aura cleanup Unit.cpp:2979)
+	// 第二遍：移除已过期的光环（TC: expired aura cleanup Unit.cpp:2979）
 	for _, a := range expired {
 		if bus != nil {
 			bus.Publish(event.Event{
@@ -304,7 +295,7 @@ func (u *Unit) updateAuras(diff int32) {
 				Extra:    map[string]any{"spellName": a.SpellName},
 			})
 		}
-		// Use aura manager for proper removal including script hooks (AfterRemove etc.)
+		// 使用光环管理器进行完整移除，包括脚本钩子（AfterRemove 等）
 		if u.engine != nil {
 			target := u.engine.GetUnit(a.TargetID)
 			if target == nil {
@@ -315,7 +306,7 @@ func (u *Unit) updateAuras(diff int32) {
 	}
 }
 
-// tickSingleAura ticks periodic effects on a single-target aura.
+// tickSingleAura tick 单体光环的周期效果。
 func (u *Unit) tickSingleAura(a *aura.Aura, elapsed time.Duration, sp float64, bus *event.Bus) {
 	for i := range a.Effects {
 		eff := &a.Effects[i]
@@ -358,7 +349,7 @@ func (u *Unit) tickSingleAura(a *aura.Aura, elapsed time.Duration, sp float64, b
 	}
 }
 
-// tickAreaAura ticks periodic effects on an area aura, resolving targets each tick.
+// tickAreaAura tick 区域光环的周期效果，每次 tick 解析目标。
 func (u *Unit) tickAreaAura(a *aura.Aura, elapsed time.Duration, sp float64, bus *event.Bus) {
 	for i := range a.Effects {
 		eff := &a.Effects[i]
@@ -371,7 +362,7 @@ func (u *Unit) tickAreaAura(a *aura.Aura, elapsed time.Duration, sp float64, bus
 			eff.TicksDone++
 			amount := eff.Amount + eff.BonusCoeff*sp
 
-			// Resolve area targets each tick
+			// 每次 tick 解析区域目标
 			if u.engine != nil {
 				targets := u.engine.GetUnitsInRadius(a.AreaCenter, a.AreaRadius, 0)
 				for _, t := range targets {
@@ -386,7 +377,7 @@ func (u *Unit) tickAreaAura(a *aura.Aura, elapsed time.Duration, sp float64, bus
 						})
 					}
 
-					// Registry hook for periodic ticks (area aura per target)
+					// 注册中心钩子：周期 tick（区域光环按目标）
 					if reg := u.engine.ScriptRegistry(); reg != nil {
 						reg.CallAuraHook(a.SpellID, script.AuraHookOnPeriodic, &script.AuraContext{
 							SpellID:  a.SpellID,
@@ -401,10 +392,10 @@ func (u *Unit) tickAreaAura(a *aura.Aura, elapsed time.Duration, sp float64, bus
 	}
 }
 
-// removeAuraFromBoth removes an aura from both owner and target.
-// This is the centralized removal path, ensuring consistency.
+// removeAuraFromBoth 从拥有者和目标两端移除光环。
+// 这是集中化的移除路径，确保一致性。
 func (u *Unit) removeAuraFromBoth(a *aura.Aura, mode aura.RemoveMode) {
-	// Remove from this unit's owned list
+	// 从此单位的拥有列表移除
 	for i, owned := range u.ownedAuras {
 		if owned.ID == a.ID {
 			u.ownedAuras = append(u.ownedAuras[:i], u.ownedAuras[i+1:]...)
@@ -412,7 +403,7 @@ func (u *Unit) removeAuraFromBoth(a *aura.Aura, mode aura.RemoveMode) {
 		}
 	}
 
-	// Remove from target's applied list
+	// 从目标的施加列表移除
 	if u.engine != nil {
 		target := u.engine.GetUnit(a.TargetID)
 		if target != nil {
@@ -436,7 +427,7 @@ func (u *Unit) getBus() *event.Bus {
 	return nil
 }
 
-// entityPos adapts entity.Position to spell.Position interface.
+// entityPos 将 entity.Position 适配为 spell.Position 接口。
 type entityPos struct {
 	p entity.Position
 }
@@ -446,5 +437,5 @@ func (ep *entityPos) GetY() float64      { return ep.p.Y }
 func (ep *entityPos) GetZ() float64      { return ep.p.Z }
 func (ep *entityPos) GetFacing() float64 { return ep.p.Facing }
 
-// Ensure Unit implements spell.Caster
+// 确保 Unit 实现 spell.Caster 接口
 var _ spell.Caster = (*Unit)(nil)

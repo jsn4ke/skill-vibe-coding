@@ -8,7 +8,7 @@ import (
 	"skill-go/pkg/unit"
 )
 
-// Spell 44457 — Living Bomb (cast entry point)
+// 法术 44457 — 活体炸弹（施放入口）
 var Info = spell.SpellInfo{
 	ID:        44457,
 	Name:      "Living Bomb",
@@ -25,7 +25,7 @@ var Info = spell.SpellInfo{
 	},
 }
 
-// Spell 217694 — Living Bomb Periodic (DoT)
+// 法术 217694 — 活体炸弹周期（DoT）
 var PeriodicInfo = spell.SpellInfo{
 	ID:        217694,
 	Name:      "Living Bomb Periodic",
@@ -51,7 +51,7 @@ var PeriodicInfo = spell.SpellInfo{
 	},
 }
 
-// Spell 44461 — Living Bomb Explode (AoE)
+// 法术 44461 — 活体炸弹爆炸（AoE）
 var ExplosionInfo = spell.SpellInfo{
 	ID:        44461,
 	Name:      "Living Bomb Explode",
@@ -74,10 +74,10 @@ var ExplosionInfo = spell.SpellInfo{
 	},
 }
 
-// RegisterScripts registers all Living Bomb script hooks.
-// Uses engine.CastSpell(WithTriggered) for all triggered spells.
+// RegisterScripts 注册所有活体炸弹的脚本钩子。
+// 所有触发法术使用 engine.CastSpell(WithTriggered)。
 func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.Engine, aoeSelector spell.AoESelector) {
-	// 44457: OnEffectHit — intercept Dummy, cast periodic spell
+	// 44457: OnEffectHit — 拦截 Dummy，施放周期法术
 	registry.RegisterSpellHook(44457, script.HookOnEffectHit, func(ctx *script.SpellContext) {
 		ctx.PreventDefault = true
 		targetID := ctx.Spell.Targets.UnitTargetID
@@ -88,7 +88,7 @@ func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.E
 		)
 	})
 
-	// 217694: AfterRemove — explode on expire only
+	// 217694: AfterRemove — 仅在过期时爆炸
 	registry.RegisterAuraHook(217694, script.AuraHookAfterRemove, func(ctx *script.AuraContext) {
 		if ctx.RemoveMode != uint8(aura.RemoveByExpire) {
 			return
@@ -104,7 +104,7 @@ func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.E
 		castExplosion(eng, caster, ctx.TargetID, canSpread, aoeSelector)
 	})
 
-	// 44461: OnEffectHit EFFECT_1 — after SchoolDamage, spread to hit targets
+	// 44461: OnEffectHit EFFECT_1 — SchoolDamage 后传播到命中目标
 	registry.RegisterSpellHook(44461, script.HookOnEffectHit, func(ctx *script.SpellContext) {
 		if ctx.EffectIndex != 1 {
 			return
@@ -124,7 +124,7 @@ func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.E
 	})
 }
 
-// castExplosion creates and casts the explosion spell via engine.
+// castExplosion 通过引擎创建并施放爆炸法术。
 func castExplosion(eng *engine.Engine, caster *unit.Unit, carrierTargetID uint64, canSpread float64, aoeSelector spell.AoESelector) {
 	carrierPos := caster.GetTargetPosition(carrierTargetID)
 	eng.CastSpell(caster, &ExplosionInfo,

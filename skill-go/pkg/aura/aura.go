@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// AuraHost is an interface for entities that can own or receive auras.
-// This breaks the import cycle between aura and unit packages.
-// Both Unit.owner and Unit.target satisfy this interface.
+// AuraHost 是可以拥有或接受光环的实体接口。
+// 打破 aura 和 unit 包之间的导入循环。
+// Unit.owner 和 Unit.target 都满足此接口。
 type AuraHost interface {
 	GetID() uint64
 	AddOwnedAura(a *Aura)
@@ -22,6 +22,7 @@ type AuraHost interface {
 	FindAppliedAura(spellID spell.SpellID, casterID uint64) *Aura
 }
 
+// AuraType 表示光环类型的枚举。
 type AuraType uint16
 
 const (
@@ -54,6 +55,7 @@ const (
 	AuraModDecreaseSpeed
 )
 
+// RemoveMode 表示光环移除的原因。
 type RemoveMode uint8
 
 const (
@@ -67,6 +69,7 @@ const (
 	RemoveByInterrupt
 )
 
+// StackRule 表示光环叠加规则。
 type StackRule uint8
 
 const (
@@ -76,6 +79,7 @@ const (
 	StackReplace
 )
 
+// Aura 表示一个光环实例。
 type Aura struct {
 	ID          uint64
 	SpellID     spell.SpellID
@@ -101,6 +105,7 @@ type Aura struct {
 	InterruptFlags spell.SpellAuraInterruptFlags
 }
 
+// AuraEffect 表示光环的周期效果。
 type AuraEffect struct {
 	EffectIndex    uint8
 	AuraType       AuraType
@@ -113,6 +118,7 @@ type AuraEffect struct {
 	TriggerSpellID spell.SpellID
 }
 
+// AuraApplication 表示光环的应用记录。
 type AuraApplication struct {
 	Aura       *Aura
 	TargetID   uint64
@@ -120,6 +126,7 @@ type AuraApplication struct {
 	EffectMask uint8
 }
 
+// NewAura 创建一个新的光环。
 func NewAura(spellID spell.SpellID, casterID, targetID uint64, auraType AuraType, duration time.Duration) *Aura {
 	return &Aura{
 		SpellID:     spellID,
@@ -132,6 +139,7 @@ func NewAura(spellID spell.SpellID, casterID, targetID uint64, auraType AuraType
 	}
 }
 
+// IsExpired 判断光环是否已过期。
 func (a *Aura) IsExpired() bool {
 	if a.MaxDuration == 0 {
 		return false
@@ -142,6 +150,7 @@ func (a *Aura) IsExpired() bool {
 	return time.Since(a.AppliedAt) >= a.MaxDuration
 }
 
+// AddStack 增加一层叠加。
 func (a *Aura) AddStack() {
 	if a.MaxStack == 0 {
 		return
@@ -152,6 +161,7 @@ func (a *Aura) AddStack() {
 	a.AppliedAt = time.Now()
 }
 
+// RemoveStack 移除指定层数。
 func (a *Aura) RemoveStack(count uint8) {
 	if count >= a.StackAmount {
 		a.StackAmount = 0
@@ -160,10 +170,12 @@ func (a *Aura) RemoveStack(count uint8) {
 	}
 }
 
+// Refresh 刷新光环的施加时间。
 func (a *Aura) Refresh() {
 	a.AppliedAt = time.Now()
 }
 
+// CalcAmount 计算指定效果的数值。
 func (a *Aura) CalcAmount(effIdx int) float64 {
 	if effIdx < 0 || effIdx >= len(a.Effects) {
 		return 0
@@ -172,9 +184,8 @@ func (a *Aura) CalcAmount(effIdx int) float64 {
 	return base * float64(a.StackAmount)
 }
 
-// Tick advances periodic effects on this aura by elapsed time.
-// Returns the tick events that occurred. onTick is called for each tick.
-// This is the aura-level tick that Unit.updateAuras calls.
+// Tick 推进单体光环的周期效果。onTick 在每次 tick 时调用。
+// 这是 Unit.updateAuras 调用的光环级 tick。
 func (a *Aura) Tick(elapsed time.Duration, casterSpellPower float64, bus *event.Bus, onTick func(*Aura, *AuraEffect, float64)) {
 	for i := range a.Effects {
 		eff := &a.Effects[i]
@@ -207,7 +218,7 @@ func (a *Aura) Tick(elapsed time.Duration, casterSpellPower float64, bus *event.
 	}
 }
 
-// TickArea advances periodic effects on an area aura, resolving targets each tick.
+// TickArea 推进区域光环的周期效果，每次 tick 解析目标。
 func (a *Aura) TickArea(elapsed time.Duration, casterSpellPower float64, bus *event.Bus, targets []uint64, onTick func(*Aura, *AuraEffect, float64, uint64)) {
 	for i := range a.Effects {
 		eff := &a.Effects[i]
@@ -238,35 +249,36 @@ func (a *Aura) TickArea(elapsed time.Duration, casterSpellPower float64, bus *ev
 	}
 }
 
-// Manager manages aura lifecycle. Provides Unit-aware ApplyAura/RemoveAuraFromHosts.
+// Manager 管理光环生命周期，提供 Unit 级别的 ApplyAura/RemoveAuraFromHosts。
 type Manager struct {
 	nextID   uint64
 	bus      *event.Bus
 	registry *script.Registry
 }
 
+// NewManager 创建一个新的光环管理器。
 func NewManager(bus *event.Bus) *Manager {
 	return &Manager{
 		bus: bus,
 	}
 }
 
+// SetRegistry 设置脚本注册中心。
 func (m *Manager) SetRegistry(reg *script.Registry) {
 	m.registry = reg
 }
 
-// NextID allocates the next aura ID (used by ApplyAura).
+// NextID 分配下一个光环 ID。
 func (m *Manager) NextID() uint64 {
 	id := m.nextID
 	m.nextID++
 	return id
 }
 
-// --- Unit-aware methods (new architecture) ---
+// --- Unit 级别方法（新架构）---
 
-// ApplyAura registers an aura on both owner and target AuraHosts.
-// This is the new primary entry point for aura application.
-// The aura is added to owner.ownedAuras and target.appliedAuras.
+// ApplyAura 在拥有者和目标两端注册光环。这是光环应用的主入口。
+// 光环被添加到 owner.ownedAuras 和 target.appliedAuras。
 func (m *Manager) ApplyAura(owner, target AuraHost, a *Aura) {
 	a.ID = m.NextID()
 
@@ -287,11 +299,11 @@ func (m *Manager) ApplyAura(owner, target AuraHost, a *Aura) {
 		}
 	}
 
-	// Dual registration
+	// 双重注册
 	owner.AddOwnedAura(a)
 	target.AddAppliedAura(a)
 
-	// Script hook
+	// 脚本钩子
 	if m.registry != nil {
 		m.registry.CallAuraHook(a.SpellID, script.AuraHookAfterApply, &script.AuraContext{
 			SpellID:  a.SpellID,
@@ -301,7 +313,7 @@ func (m *Manager) ApplyAura(owner, target AuraHost, a *Aura) {
 		})
 	}
 
-	// Event
+	// 事件
 	if m.bus != nil {
 		m.bus.Publish(event.Event{
 			Type:     event.OnAuraApplied,
@@ -313,9 +325,9 @@ func (m *Manager) ApplyAura(owner, target AuraHost, a *Aura) {
 	}
 }
 
-// RemoveAuraFromHosts removes an aura from both owner and target AuraHosts.
+// RemoveAuraFromHosts 从拥有者和目标两端移除光环。
 func (m *Manager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode RemoveMode) {
-	// Script hook
+	// 脚本钩子
 	if m.registry != nil {
 		m.registry.CallAuraHook(a.SpellID, script.AuraHookAfterRemove, &script.AuraContext{
 			SpellID:    a.SpellID,
@@ -326,7 +338,7 @@ func (m *Manager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode Remo
 		})
 	}
 
-	// Remove from owner's owned list
+	// 从拥有者的拥有列表移除
 	for i, owned := range owner.GetOwnedAuras() {
 		if owned.ID == a.ID {
 			owner.RemoveOwnedAura(i)
@@ -334,7 +346,7 @@ func (m *Manager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode Remo
 		}
 	}
 
-	// Remove from target's applied list
+	// 从目标的施加列表移除
 	for i, applied := range target.GetAppliedAuras() {
 		if applied.ID == a.ID {
 			target.RemoveAppliedAura(i)
