@@ -2,6 +2,7 @@ package spell
 
 import (
 	"skill-go/pkg/event"
+	"skill-go/pkg/targeting"
 
 	"math"
 )
@@ -78,11 +79,6 @@ type CancelHook func()
 // AuraCreatedFunc 在效果管线创建光环时调用。使用 interface{} 避免导入 aura 包
 type AuraCreatedFunc func(a interface{})
 
-// AoESelector 是 AoE 目标选择器接口
-type AoESelector interface {
-	SelectAoETargets(center [3]float64, excludeID uint64) []uint64
-}
-
 // TargetInfo 包含法术目标的命中信息
 type TargetInfo struct {
 	TargetID     uint64
@@ -110,9 +106,6 @@ type Spell struct {
 	OnCancel       CancelHook
 	OnAuraCreated  AuraCreatedFunc
 	SpellValues    map[uint8]float64
-	AoESelector    AoESelector
-	AoECenter      [3]float64
-	AoEExcludeID   uint64
 	Engine         SpellEngineRef
 }
 
@@ -136,13 +129,18 @@ type Position interface {
 	GetFacing() float64
 }
 
-// SpellEngineRef 提供法术对引擎的访问，用于打断检查和脚本钩子。由 engine.Engine 实现以避免循环导入
+// SpellEngineRef 提供法术对引擎的访问，用于打断检查、脚本钩子和目标选择。由 engine.Engine 实现以避免循环导入
 type SpellEngineRef interface {
 	GetCasterUnit(id uint64) CasterUnit
 	AuraRemover() AuraRemover
 	CallLaunchHook(spellID SpellID, s *Spell)
 	CallCancelHook(spellID SpellID, s *Spell)
 	RemoveOwnedAurasBySpellID(casterID uint64, spellID SpellID)
+	// 目标选择所需的引擎方法
+	GetTargetUnit(id uint64) targeting.TargetUnit
+	GetTargetUnitsInRadius(center [3]float64, radius float64, excludeID uint64) []targeting.TargetUnit
+	// 调用目标选择脚本钩子
+	CallTargetSelectHook(spellID SpellID, s *Spell, units []targeting.TargetUnit)
 }
 
 // CasterUnit 是法术需要的最小目标单位接口
@@ -349,7 +347,7 @@ func (s *Spell) Cast(skipCheck bool) {
 		}
 	}
 
-	s.SelectTargets()
+	s.SelectEffectTargets()
 
 	if s.State == StateFinished {
 		return
@@ -511,38 +509,163 @@ func (s *Spell) CheckCast(strict bool) SpellCastResult {
 	return CastOK
 }
 
-func (s *Spell) SelectTargets() {
+// SelectEffectTargets 对每个 effect 的 TargetA 和 TargetB 分别解析目标，对齐 TC 的 Spell::SelectImplicitTargets。
+// 替代旧的 SelectTargets()，使用 targeting 包的数据驱动查表。
+func (s *Spell) SelectEffectTargets() {
 	s.TargetInfos = nil
+	if s.Info == nil || len(s.Info.Effects) == 0 {
+		return
+	}
 
-	// 检查是否有效果使用区域目标
-	hasAreaTarget := false
-	if s.Info != nil {
-		for i := range s.Info.Effects {
-			t := s.Info.Effects[i].TargetA
-			if t == TargetUnitAreaEnemy || t == TargetUnitAreaAlly || t == TargetUnitConeEnemy || t == TargetUnitChainEnemy || t == TargetUnitChainAlly {
-				hasAreaTarget = true
+	// processedEffectMask 记录已处理的效果索引，避免重复搜索
+	processedMask := uint8(0)
+
+	for i := range s.Info.Effects {
+		eff := &s.Info.Effects[i]
+		effectBit := uint8(1) << eff.EffectIndex
+
+		// TargetA 解析
+		if eff.TargetA != TargetNone {
+			s.selectEffectImplicitTargets(eff.TargetA, eff, effectBit, &processedMask)
+		}
+
+		// TargetB 解析（使用 TargetA 解析后的参考位置）
+		if eff.TargetB != TargetNone {
+			s.selectEffectImplicitTargets(eff.TargetB, eff, effectBit, &processedMask)
+		}
+	}
+}
+
+// selectEffectImplicitTargets 根据 ImplicitTarget 的 5 维属性分发目标选择，对齐 TC 的 SpellImplicitTargetInfo::SelectTarget。
+func (s *Spell) selectEffectImplicitTargets(target ImplicitTarget, eff *SpellEffectInfo, effectBit uint8, processedMask *uint8) {
+	info := targeting.NewImplicitTargetInfo(uint16(target))
+	category := info.GetSelectionCategory()
+
+	if category == targeting.SelectNYI {
+		return
+	}
+
+	var units []targeting.TargetUnit
+
+	switch category {
+	case targeting.SelectDefault:
+		units = targeting.ResolveDefaultTargets(info, s)
+
+	case targeting.SelectArea:
+		center := targeting.ResolveCenter(info.GetReferenceType(), s)
+		radius := eff.Radius
+		if radius <= 0 {
+			radius = 5.0 // 默认半径，对齐 TC 的 DEFAULT_RADIUS
+		}
+		units = targeting.SearchAreaTargets(center, radius, info.GetCheckType(), s.GetCaster(), s, 0)
+
+	case targeting.SelectCone:
+		center := targeting.ResolveCenter(info.GetReferenceType(), s)
+		radius := eff.Radius
+		if radius <= 0 {
+			radius = 5.0
+		}
+		// 锥形方向：施法者朝向 + DirectionType 偏移
+		var direction float64
+		if caster := s.GetCaster(); caster != nil {
+			direction = caster.GetPosition().GetFacing()
+		}
+		dirAngle := info.CalcDirectionAngle()
+		direction += dirAngle
+		// 默认弧度 90°，对齐 TC 的 DEFAULT_CONE_ANGLE
+		arcAngle := math.Pi / 2
+		units = targeting.SearchConeTargets(center, direction, arcAngle, radius, info.GetCheckType(), s.GetCaster(), s, 0)
+
+	case targeting.SelectNearby:
+		center := targeting.ResolveCenter(info.GetReferenceType(), s)
+		radius := eff.Radius
+		if radius <= 0 {
+			radius = 30.0 // Nearby 默认搜索半径
+		}
+		if u := targeting.SearchNearbyTarget(center, radius, info.GetCheckType(), s.GetCaster(), s, 0); u != nil {
+			units = []targeting.TargetUnit{u}
+		}
+
+	case targeting.SelectLine:
+		from := targeting.ResolveCenter(targeting.RefCaster, s)
+		to := targeting.ResolveCenter(info.GetReferenceType(), s)
+		width := eff.Radius
+		if width <= 0 {
+			width = 5.0
+		}
+		units = targeting.SearchLineTargets(from, to, width, info.GetCheckType(), s.GetCaster(), s, 0)
+
+	case targeting.SelectChannel:
+		units = targeting.SelectChannelTargets(info, s)
+	}
+
+	// Chain 跳跃处理
+	if eff.ChainTargets > 0 && len(units) > 0 {
+		excludeIDs := make([]uint64, 0, len(s.TargetInfos)+1)
+		for _, ti := range s.TargetInfos {
+			excludeIDs = append(excludeIDs, ti.TargetID)
+		}
+		chainResult := targeting.SearchChainTargets(units[0], int(eff.ChainTargets), eff.Radius, info.GetCheckType(), s.GetCaster(), s, excludeIDs)
+		units = chainResult
+	}
+
+	// 将搜索结果添加到 TargetInfos
+	for _, u := range units {
+		uid := u.GetID()
+		// 查找是否已存在，若存在则合并 EffectMask
+		found := false
+		for i := range s.TargetInfos {
+			if s.TargetInfos[i].TargetID == uid {
+				s.TargetInfos[i].EfffectMask |= effectBit
+				found = true
 				break
 			}
 		}
-	}
-
-	if hasAreaTarget && s.AoESelector != nil {
-		targets := s.AoESelector.SelectAoETargets(s.AoECenter, s.AoEExcludeID)
-		for _, tid := range targets {
+		if !found {
 			s.TargetInfos = append(s.TargetInfos, TargetInfo{
-				TargetID:    tid,
+				TargetID:    uid,
 				MissReason:  HitNormal,
-				EfffectMask: 0xFF,
+				EfffectMask: effectBit,
 			})
 		}
 	}
 
-	if s.Targets.UnitTargetID != 0 && !hasAreaTarget {
-		s.TargetInfos = append(s.TargetInfos, TargetInfo{
-			TargetID:    s.Targets.UnitTargetID,
-			MissReason:  HitNormal,
-			EfffectMask: 0xFF,
-		})
+	// Fallback: 当引擎不可用时，如果 UnitTargetID 已设置且 TargetInfos 为空，直接添加
+	if len(units) == 0 && s.Engine == nil && s.Targets.UnitTargetID != 0 {
+		exists := false
+		for _, ti := range s.TargetInfos {
+			if ti.TargetID == s.Targets.UnitTargetID {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			s.TargetInfos = append(s.TargetInfos, TargetInfo{
+				TargetID:    s.Targets.UnitTargetID,
+				MissReason:  HitNormal,
+				EfffectMask: effectBit,
+			})
+		}
+	}
+
+	// 处理 DEST/SRC 类型：设置位置
+	objType := info.GetObjectType()
+	if objType == targeting.ObjDest || objType == targeting.ObjSrc || objType == targeting.ObjUnitAndDest {
+		center := targeting.ResolveCenter(info.GetReferenceType(), s)
+		dirType := info.GetDirectionType()
+		if dirType != targeting.DirNone {
+			center = targeting.ApplyDirectionOffset(center, dirType, s)
+		}
+		// 设置 DestPos（如果尚未设置）
+		if s.Targets.DestPos == [3]float64{} {
+			s.Targets.DestPos = center
+		}
+		// 设置 SourcePos（SRC 类型）
+		if objType == targeting.ObjSrc {
+			if s.Targets.SourcePos == [3]float64{} {
+				s.Targets.SourcePos = center
+			}
+		}
 	}
 }
 
@@ -569,6 +692,77 @@ func (s *Spell) calculateHitDelay() int32 {
 	hitDelayMs := math.Max(hitDelaySec*1000.0, minDelayMs)
 	return int32(hitDelayMs)
 }
+
+// --- targeting.SpellTargetRef 接口实现 ---
+
+// GetCaster 返回施法者作为 TargetUnit。
+func (s *Spell) GetCaster() targeting.TargetUnit {
+	return &casterAdapter{caster: s.Caster}
+}
+
+// GetUnitTargetID 返回当前选中的单位目标 ID。
+func (s *Spell) GetUnitTargetID() uint64 {
+	return s.Targets.UnitTargetID
+}
+
+// GetSourcePos 返回法术源位置。
+func (s *Spell) GetSourcePos() [3]float64 {
+	return s.Targets.SourcePos
+}
+
+// GetDestPos 返回法术目标位置。
+func (s *Spell) GetDestPos() [3]float64 {
+	return s.Targets.DestPos
+}
+
+// GetLastTargetID 返回上一个加入 TargetInfos 的目标 ID。
+func (s *Spell) GetLastTargetID() uint64 {
+	if len(s.TargetInfos) == 0 {
+		return 0
+	}
+	return s.TargetInfos[len(s.TargetInfos)-1].TargetID
+}
+
+// GetUnitByID 按 ID 获取单位，委托给引擎。
+func (s *Spell) GetUnitByID(id uint64) targeting.TargetUnit {
+	if s.Engine == nil {
+		return nil
+	}
+	return s.Engine.GetTargetUnit(id)
+}
+
+// GetUnitsInRadius 获取指定半径内的所有单位，委托给引擎。
+func (s *Spell) GetUnitsInRadius(center [3]float64, radius float64, excludeID uint64) []targeting.TargetUnit {
+	if s.Engine == nil {
+		return nil
+	}
+	return s.Engine.GetTargetUnitsInRadius(center, radius, excludeID)
+}
+
+// casterAdapter 将 spell.Caster 适配为 targeting.TargetUnit。
+type casterAdapter struct {
+	caster Caster
+}
+
+func (ca *casterAdapter) GetID() uint64              { return ca.caster.GetID() }
+func (ca *casterAdapter) GetPosition() targeting.TargetPosition {
+	return &posAdapter{pos: ca.caster.GetPosition()}
+}
+func (ca *casterAdapter) GetEntityType() uint8 { return 0 } // Caster 接口无 EntityType，默认 0
+func (ca *casterAdapter) IsAlive() bool        { return ca.caster.IsAlive() }
+
+// posAdapter 将 spell.Position 适配为 targeting.TargetPosition。
+type posAdapter struct {
+	pos Position
+}
+
+func (pa *posAdapter) GetX() float64      { return pa.pos.GetX() }
+func (pa *posAdapter) GetY() float64      { return pa.pos.GetY() }
+func (pa *posAdapter) GetZ() float64      { return pa.pos.GetZ() }
+func (pa *posAdapter) GetFacing() float64 { return pa.pos.GetFacing() }
+
+// 确保 Spell 实现 targeting.SpellTargetRef 接口
+var _ targeting.SpellTargetRef = (*Spell)(nil)
 
 func positionDistance(a, b Position) float64 {
 	dx := a.GetX() - b.GetX()

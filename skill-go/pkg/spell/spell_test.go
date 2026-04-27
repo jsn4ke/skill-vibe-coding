@@ -238,7 +238,7 @@ func TestFireball_CritIncreasesDamage(t *testing.T) {
 		s := spell.NewSpell(spell.SpellID(info.ID), info, caster, spell.TriggeredNone)
 		s.Targets.UnitTargetID = 2
 		s.Prepare()
-		s.SelectTargets()
+		s.SelectEffectTargets()
 		for j := range s.TargetInfos {
 			s.TargetInfos[j].Crit = true
 		}

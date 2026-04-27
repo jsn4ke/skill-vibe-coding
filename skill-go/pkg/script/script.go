@@ -2,6 +2,7 @@ package script
 
 import (
 	"skill-go/pkg/spell"
+	"skill-go/pkg/targeting"
 )
 
 // Hook 表示法术脚本钩子的类型。
@@ -20,6 +21,7 @@ const (
 	HookAfterHit
 	HookOnSpellLaunch
 	HookOnSpellCancel
+	HookOnTargetSelect // 目标选择完成后、AddTarget 前调用
 )
 
 // AuraHook 表示光环脚本钩子的类型。
@@ -40,6 +42,8 @@ type SpellContext struct {
 	Spell          *spell.Spell
 	PreventDefault bool
 	EffectIndex    uint8
+	// TargetUnits 是 HookOnTargetSelect 时已选中的目标列表，脚本可修改此切片干预目标选择
+	TargetUnits []targeting.TargetUnit
 }
 
 // HandlerFunc 是法术脚本钩子的处理函数类型。

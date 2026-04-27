@@ -27,7 +27,7 @@ The package SHALL define a SpellInfo for spell 217694 "Living Bomb Periodic": in
 
 ### Requirement: Living Bomb explosion spell (44461)
 
-The package SHALL define a SpellInfo for spell 44461 "Living Bomb Explode": instant, no cost, with EffectDummy and EffectSchoolDamage (BonusCoeff=0.14, Radius=10yd, TargetA=TargetUnitAreaEnemy). The explosion SHALL select all enemies within 10yd of the bomb carrier (excluding the carrier itself), deal fire damage, and optionally spread Living Bomb.
+The package SHALL define a SpellInfo for spell 44461 "Living Bomb Explode": instant, no cost, with EffectDummy and EffectSchoolDamage (BonusCoeff=0.14, Radius=10.0, TargetA=TargetUnitAreaEnemy). The explosion SHALL use the data-driven target selection system to automatically select all enemies within 10yd of the explosion center (the bomb carrier's position), excluding the carrier. The `AoESelector` interface SHALL NOT be used; target selection SHALL be driven entirely by SpellInfo's TargetA + Radius fields.
 
 #### Scenario: Explosion hits enemies within 10yd
 - **WHEN** spell 44461 is cast and 3 enemies are within 10yd of the bomb carrier
@@ -35,7 +35,7 @@ The package SHALL define a SpellInfo for spell 44461 "Living Bomb Explode": inst
 
 #### Scenario: Explosion excludes bomb carrier
 - **WHEN** spell 44461 is cast on target A (the bomb carrier)
-- **THEN** target A SHALL NOT be in the TargetInfos (excluded by AoE selection)
+- **THEN** target A SHALL NOT be in the TargetInfos (excluded by area target selection with caster exclude)
 
 #### Scenario: Explosion spreads Living Bomb when canSpread=true
 - **WHEN** spell 44461's OnEffectHit hook fires with SpellValues[2] > 0
@@ -73,12 +73,13 @@ When explosion spreads Living Bomb (SpellValues[2]=0), the spread copy's aura SH
 
 ### Requirement: Living Bomb skill tests
 
-The `skills/living-bomb` package SHALL include `living_bomb_test.go` and `living_bomb_timeline_test.go` covering: full cast lifecycle, resource consumption, aura application, periodic damage ticks, explosion on expiry, no explosion on death, AoE damage, spread mechanic, spread chain termination, and timeline event ordering.
+The `skills/living-bomb` package SHALL include `living_bomb_engine_test.go` covering: full cast lifecycle via `eng.CastSpell()`, resource consumption, aura application, periodic damage ticks, explosion on expiry, no explosion on death, AoE damage via data-driven target selection (no WithAoE), spread mechanic, spread chain termination, and movement interrupt. Tests SHALL NOT use `WithAoE()` — all AoE targeting SHALL be resolved by the engine's target selection system from SpellInfo data.
 
 #### Scenario: Test file exists and passes
 - **WHEN** `go test ./skills/living-bomb/... -v` is run
 - **THEN** all tests SHALL pass
 
-#### Scenario: Timeline test verifies event sequence
-- **WHEN** a full Living Bomb lifecycle is simulated (cast → 4s DoT → expiry → explosion → spread)
-- **THEN** the timeline SHALL show events in order: SpellCastStart(44457) → SpellLaunch(44457) → AuraApplied(217694) → 4×AuraTick → AuraExpired(217694) → SpellHit(44461) × AoE targets
+#### Scenario: AoE targeting works without WithAoE
+- **WHEN** Living Bomb explosion is cast via `eng.CastSpell(caster, &ExplosionInfo, engine.WithTriggered())`
+- **THEN** the engine's target selection SHALL resolve enemies within Radius from the explosion center
+- **AND** no `WithAoE()` call SHALL be present in the test code

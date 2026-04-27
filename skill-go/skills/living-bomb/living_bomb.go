@@ -52,6 +52,7 @@ var PeriodicInfo = spell.SpellInfo{
 }
 
 // 法术 44461 — 活体炸弹爆炸（AoE）
+// TargetA=TargetUnitSrcAreaEnemy + Radius=10.0：引擎自动在 SrcPos 半径内搜索敌方目标
 var ExplosionInfo = spell.SpellInfo{
 	ID:        44461,
 	Name:      "Living Bomb Explode",
@@ -63,20 +64,23 @@ var ExplosionInfo = spell.SpellInfo{
 		{
 			EffectIndex: 0,
 			EffectType:  spell.EffectDummy,
-			TargetA:     spell.TargetUnitAreaEnemy,
+			TargetA:     spell.TargetUnitSrcAreaEnemy,
+			Radius:      10.0,
 		},
 		{
 			EffectIndex: 1,
 			EffectType:  spell.EffectSchoolDamage,
 			BonusCoeff:  0.14,
-			TargetA:     spell.TargetUnitAreaEnemy,
+			TargetA:     spell.TargetUnitSrcAreaEnemy,
+			Radius:      10.0,
 		},
 	},
 }
 
 // RegisterScripts 注册所有活体炸弹的脚本钩子。
 // 所有触发法术使用 engine.CastSpell(WithTriggered)。
-func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.Engine, aoeSelector spell.AoESelector) {
+// 爆炸法术的 AoE 目标选择由引擎自动解析（TargetA+Radius），无需 WithAoE。
+func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.Engine) {
 	// 44457: OnEffectHit — 拦截 Dummy，施放周期法术
 	registry.RegisterSpellHook(44457, script.HookOnEffectHit, func(ctx *script.SpellContext) {
 		ctx.PreventDefault = true
@@ -101,7 +105,7 @@ func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.E
 		if a.SpellValues != nil {
 			canSpread = a.SpellValues[2]
 		}
-		castExplosion(eng, caster, ctx.TargetID, canSpread, aoeSelector)
+		castExplosion(eng, caster, ctx.TargetID, canSpread)
 	})
 
 	// 44461: OnEffectHit EFFECT_1 — SchoolDamage 后传播到命中目标
@@ -125,11 +129,12 @@ func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.E
 }
 
 // castExplosion 通过引擎创建并施放爆炸法术。
-func castExplosion(eng *engine.Engine, caster *unit.Unit, carrierTargetID uint64, canSpread float64, aoeSelector spell.AoESelector) {
+// 设置 SourcePos 为承载者位置，引擎自动在 SrcPos 半径内搜索敌方目标。
+func castExplosion(eng *engine.Engine, caster *unit.Unit, carrierTargetID uint64, canSpread float64) {
 	carrierPos := caster.GetTargetPosition(carrierTargetID)
 	eng.CastSpell(caster, &ExplosionInfo,
 		engine.WithTriggered(),
-		engine.WithAoE(aoeSelector, [3]float64{carrierPos.GetX(), carrierPos.GetY(), carrierPos.GetZ()}, carrierTargetID),
+		engine.WithSrcPos(carrierPos.GetX(), carrierPos.GetY(), carrierPos.GetZ()),
 		engine.WithSpellValues(map[uint8]float64{2: canSpread}),
 	)
 }

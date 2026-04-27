@@ -11,6 +11,7 @@ import (
 	"skill-go/pkg/script"
 	"skill-go/pkg/spell"
 	"skill-go/pkg/stat"
+	"skill-go/pkg/targeting"
 	"skill-go/pkg/timeline"
 	"skill-go/pkg/unit"
 	"time"
@@ -154,10 +155,8 @@ type CastOption func(*castConfig)
 type castConfig struct {
 	targetID    uint64
 	destPos     [3]float64
+	srcPos      [3]float64
 	spellValues map[uint8]float64
-	aoeSelector spell.AoESelector
-	aoeCenter   [3]float64
-	aoeExclude  uint64
 	triggered   bool
 }
 
@@ -171,18 +170,14 @@ func WithDestPos(x, y, z float64) CastOption {
 	return func(c *castConfig) { c.destPos = [3]float64{x, y, z} }
 }
 
+// WithSrcPos 设置法术的源位置，用于 SrcPos 区域目标选择。
+func WithSrcPos(x, y, z float64) CastOption {
+	return func(c *castConfig) { c.srcPos = [3]float64{x, y, z} }
+}
+
 // WithSpellValues 设置法术值，用于脚本间通信。
 func WithSpellValues(sv map[uint8]float64) CastOption {
 	return func(c *castConfig) { c.spellValues = sv }
-}
-
-// WithAoE 设置 AoE 目标选择参数。
-func WithAoE(selector spell.AoESelector, center [3]float64, excludeID uint64) CastOption {
-	return func(c *castConfig) {
-		c.aoeSelector = selector
-		c.aoeCenter = center
-		c.aoeExclude = excludeID
-	}
 }
 
 // WithTriggered 标记法术为触发的（忽略 GCD、冷却、资源消耗）。
@@ -226,13 +221,11 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 	if cfg.destPos != [3]float64{} {
 		s.Targets.DestPos = cfg.destPos
 	}
+	if cfg.srcPos != [3]float64{} {
+		s.Targets.SourcePos = cfg.srcPos
+	}
 	if cfg.spellValues != nil {
 		s.SpellValues = cfg.spellValues
-	}
-	if cfg.aoeSelector != nil {
-		s.AoESelector = cfg.aoeSelector
-		s.AoECenter = cfg.aoeCenter
-		s.AoEExcludeID = cfg.aoeExclude
 	}
 
 	// Prepare 验证并设置状态
@@ -273,6 +266,48 @@ func (e *Engine) GetCasterUnit(id uint64) spell.CasterUnit {
 	return u
 }
 
+// GetTargetUnit 按 ID 获取单位作为 TargetUnit，满足 spell.SpellEngineRef 接口。
+func (e *Engine) GetTargetUnit(id uint64) targeting.TargetUnit {
+	u := e.units[id]
+	if u == nil {
+		return nil
+	}
+	return &unitTargetAdapter{unit: u}
+}
+
+// GetTargetUnitsInRadius 获取指定半径内的所有单位作为 TargetUnit，满足 spell.SpellEngineRef 接口。
+func (e *Engine) GetTargetUnitsInRadius(center [3]float64, radius float64, excludeID uint64) []targeting.TargetUnit {
+	units := e.GetUnitsInRadius(center, radius, excludeID)
+	result := make([]targeting.TargetUnit, len(units))
+	for i, u := range units {
+		result[i] = &unitTargetAdapter{unit: u}
+	}
+	return result
+}
+
+// unitTargetAdapter 将 *unit.Unit 适配为 targeting.TargetUnit。
+type unitTargetAdapter struct {
+	unit *unit.Unit
+}
+
+func (a *unitTargetAdapter) GetID() uint64                       { return a.unit.ID() }
+func (a *unitTargetAdapter) GetPosition() targeting.TargetPosition {
+	p := a.unit.Entity.Pos
+	return &entityPosAdapter{pos: p}
+}
+func (a *unitTargetAdapter) GetEntityType() uint8 { return uint8(a.unit.Entity.Type) }
+func (a *unitTargetAdapter) IsAlive() bool        { return a.unit.IsAlive() }
+
+// entityPosAdapter 将 entity.Position 适配为 targeting.TargetPosition。
+type entityPosAdapter struct {
+	pos entity.Position
+}
+
+func (a *entityPosAdapter) GetX() float64      { return a.pos.X }
+func (a *entityPosAdapter) GetY() float64      { return a.pos.Y }
+func (a *entityPosAdapter) GetZ() float64      { return a.pos.Z }
+func (a *entityPosAdapter) GetFacing() float64 { return a.pos.Facing }
+
 func (e *Engine) AuraRemover() spell.AuraRemover {
 	return &auraRemover{engine: e}
 }
@@ -283,6 +318,11 @@ func (e *Engine) CallLaunchHook(spellID spell.SpellID, s *spell.Spell) {
 
 func (e *Engine) CallCancelHook(spellID spell.SpellID, s *spell.Spell) {
 	e.registry.CallSpellHook(spellID, script.HookOnSpellCancel, &script.SpellContext{Spell: s})
+}
+
+// CallTargetSelectHook
+func (e *Engine) CallTargetSelectHook(spellID spell.SpellID, s *spell.Spell, units []targeting.TargetUnit) {
+	e.registry.CallSpellHook(spellID, script.HookOnTargetSelect, &script.SpellContext{Spell: s, TargetUnits: units})
 }
 
 // auraRemover 将引擎适配为 spell.AuraRemover，用于引导法术的光环清理。
