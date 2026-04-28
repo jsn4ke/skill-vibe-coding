@@ -14,7 +14,9 @@ const (
 	HookOnHit
 	HookOnMiss
 	HookOnEffectHit
+	HookOnEffectHitTarget
 	HookOnEffectLaunch
+	HookOnEffectLaunchTarget
 	HookBeforeCast
 	HookAfterCast
 	HookBeforeHit

@@ -81,8 +81,8 @@ var ExplosionInfo = spell.SpellInfo{
 // 所有触发法术使用 engine.CastSpell(WithTriggered)。
 // 爆炸法术的 AoE 目标选择由引擎自动解析（TargetA+Radius），无需 WithAoE。
 func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.Engine) {
-	// 44457: OnEffectHit — 拦截 Dummy，施放周期法术
-	registry.RegisterSpellHook(44457, script.HookOnEffectHit, func(ctx *script.SpellContext) {
+	// 44457: OnEffectHitTarget — 拦截 Dummy，施放周期法术
+	registry.RegisterSpellHook(44457, script.HookOnEffectHitTarget, func(ctx *script.SpellContext) {
 		ctx.PreventDefault = true
 		targetID := ctx.Spell.Targets.UnitTargetID
 		eng.CastSpell(caster, &PeriodicInfo,
@@ -108,8 +108,8 @@ func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.E
 		castExplosion(eng, caster, ctx.TargetID, canSpread)
 	})
 
-	// 44461: OnEffectHit EFFECT_1 — SchoolDamage 后传播到命中目标
-	registry.RegisterSpellHook(44461, script.HookOnEffectHit, func(ctx *script.SpellContext) {
+	// 44461: OnEffectHitTarget EFFECT_1 — SchoolDamage 后传播到命中目标
+	registry.RegisterSpellHook(44461, script.HookOnEffectHitTarget, func(ctx *script.SpellContext) {
 		if ctx.EffectIndex != 1 {
 			return
 		}

@@ -242,7 +242,7 @@ func TestFireball_CritIncreasesDamage(t *testing.T) {
 		for j := range s.TargetInfos {
 			s.TargetInfos[j].Crit = true
 		}
-		effect.ProcessAll(s, spell.HandleHit)
+		effect.ProcessAll(s)
 		totalCrit += s.TargetInfos[0].Damage
 	}
 
@@ -266,8 +266,8 @@ func TestFireball_AppliesDoTAura(t *testing.T) {
 	s.Prepare()
 
 	origFn := spell.ProcessEffectsFn
-	spell.ProcessEffectsFn = func(sp *spell.Spell, mode spell.EffectHandleMode) {
-		effect.ProcessAll(sp, mode)
+	spell.ProcessEffectsFn = func(sp *spell.Spell) {
+		effect.ProcessAll(sp)
 	}
 	defer func() { spell.ProcessEffectsFn = origFn }()
 
@@ -279,7 +279,7 @@ func TestFireball_AppliesDoTAura(t *testing.T) {
 		EffectInfo:       &info.Effects[1],
 		CasterID:         1,
 		TargetID:         2,
-		Mode:             spell.HandleHit,
+		Mode:             spell.HandleHitTarget,
 		CasterSpellPower: 100,
 	}
 	effect.Process(ctx)

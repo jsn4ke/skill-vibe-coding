@@ -54,7 +54,7 @@ const (
 type CastFlags uint32
 
 // EffectProcessorFunc 是效果处理函数的类型
-type EffectProcessorFunc func(s *Spell, mode EffectHandleMode)
+type EffectProcessorFunc func(s *Spell)
 
 // ProcessEffectsFn 是全局效果处理函数，由 effect 包的 init() 设置
 var ProcessEffectsFn EffectProcessorFunc
@@ -399,11 +399,11 @@ func (s *Spell) Cast(skipCheck bool) {
 	}
 }
 
-// ProcessEffects 处理效果管线并发布 SpellHit 事件。不调用 Finish()，由调用者决定何时完成
+// ProcessEffects 处理效果管线并发布 SpellHit 事件。不调用 Finish()，由调用者决定何时完成。
+// 对齐 TC handle_immediate 的四阶段模型：Launch → LaunchTarget → Hit → HitTarget。
 func (s *Spell) ProcessEffects() {
-	s.HandleEffects(HandleLaunch)
 	if ProcessEffectsFn != nil {
-		ProcessEffectsFn(s, HandleHit)
+		ProcessEffectsFn(s)
 	}
 	if s.Bus != nil {
 		for i := range s.TargetInfos {
@@ -673,10 +673,6 @@ func (s *Spell) TakePower() {
 	if s.Info.PowerCost > 0 {
 		s.Caster.ModifyPower(s.Info.PowerType, -float64(s.Info.PowerCost))
 	}
-}
-
-func (s *Spell) HandleEffects(mode EffectHandleMode) {
-	_ = mode
 }
 
 func (s *Spell) calculateHitDelay() int32 {

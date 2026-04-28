@@ -73,8 +73,9 @@ This rule activates when the conversation involves implementing, designing, or b
 1. **Identify the mechanism topic** from the keywords above
 2. **Check `tc-references/`** for cached analysis — reuse if present
 3. **Invoke `tc-mechanism-ref`** if no cached analysis exists
-4. **Follow TC patterns as structural requirements** — core architecture must align, not approximate
-5. **No mandatory confirmation** — this is a relaxed rule; reference TC and proceed without blocking
+4. **Verify persistence** — TC 研究完成后必须检查 `tc-references/<topic-slug>.md` 是否存在，如果不存在立即保存后再继续
+5. **Follow TC patterns as structural requirements** — core architecture must align, not approximate
+6. **No mandatory confirmation** — this is a relaxed rule; reference TC and proceed without blocking
 
 ### Skill Design Trigger
 

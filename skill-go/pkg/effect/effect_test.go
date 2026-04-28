@@ -19,6 +19,7 @@ func TestHandleSchoolDamage_WithSpellPower(t *testing.T) {
 		},
 		CasterSpellPower: 100,
 		Crit:             false,
+		Mode:             spell.HandleLaunchTarget,
 	}
 	handleSchoolDamage(ctx)
 	if ctx.BaseDamage != 678 {
@@ -39,6 +40,7 @@ func TestHandleSchoolDamage_ZeroSpellPower(t *testing.T) {
 		},
 		CasterSpellPower: 0,
 		Crit:             false,
+		Mode:             spell.HandleLaunchTarget,
 	}
 	handleSchoolDamage(ctx)
 	if ctx.FinalDamage != 678 {
@@ -56,6 +58,7 @@ func TestHandleSchoolDamage_WithCrit(t *testing.T) {
 		},
 		CasterSpellPower: 100,
 		Crit:             true,
+		Mode:             spell.HandleLaunchTarget,
 	}
 	handleSchoolDamage(ctx)
 	expected := (678 + 100) * 1.5
@@ -74,6 +77,7 @@ func TestHandleSchoolDamage_WithVariance(t *testing.T) {
 		},
 		CasterSpellPower: 0,
 		Crit:             false,
+		Mode:             spell.HandleLaunchTarget,
 	}
 	handleSchoolDamage(ctx)
 	if ctx.BaseDamage < 678 || ctx.BaseDamage > 678+164 {
@@ -99,6 +103,7 @@ func TestHandleApplyAura_CreatesPeriodicDamageAura(t *testing.T) {
 		},
 		CasterID: 1,
 		TargetID: 2,
+		Mode:     spell.HandleHitTarget,
 	}
 	handleApplyAura(ctx)
 
