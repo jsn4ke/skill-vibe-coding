@@ -11,25 +11,25 @@ import (
 )
 
 type testUnit struct {
-	id       uint64
-	alive    bool
-	stats    *stat.StatSet
-	pos      testPos
-	targets  map[uint64]*testUnit
+	id      uint64
+	alive   bool
+	stats   *stat.StatSet
+	pos     testPos
+	targets map[uint64]*testUnit
 }
 
-func (u *testUnit) GetID() uint64                          { return u.id }
-func (u *testUnit) IsAlive() bool                          { return u.alive }
-func (u *testUnit) CanCast() bool                          { return u.alive }
-func (u *testUnit) IsMoving() bool                         { return false }
-func (u *testUnit) GetPosition() spell.Position            { return &u.pos }
+func (u *testUnit) GetID() uint64               { return u.id }
+func (u *testUnit) IsAlive() bool               { return u.alive }
+func (u *testUnit) CanCast() bool               { return u.alive }
+func (u *testUnit) IsMoving() bool              { return false }
+func (u *testUnit) GetPosition() spell.Position { return &u.pos }
 func (u *testUnit) GetTargetPosition(targetID uint64) spell.Position {
 	if t, ok := u.targets[targetID]; ok {
 		return &t.pos
 	}
 	return &u.pos
 }
-func (u *testUnit) GetStatValue(st uint8) float64          { return u.stats.Get(stat.StatType(st)) }
+func (u *testUnit) GetStatValue(st uint8) float64             { return u.stats.Get(stat.StatType(st)) }
 func (u *testUnit) ModifyPower(pt uint8, amount float64) bool { return true }
 
 type testPos struct {
@@ -43,14 +43,14 @@ func (p *testPos) GetFacing() float64 { return p.facing }
 
 func fireballInfo() *spell.SpellInfo {
 	return &spell.SpellInfo{
-		ID:         25306,
-		Name:       "Fireball",
-		CastTime:   3500,
-		RangeMax:   35,
-		PowerCost:  410,
-		PowerType:  0,
-		Duration:   8000,
-		Speed:      20.0,
+		ID:        25306,
+		Name:      "Fireball",
+		CastTime:  3500,
+		RangeMax:  35,
+		PowerCost: 410,
+		PowerType: 0,
+		Duration:  8000,
+		Speed:     20.0,
 		Effects: []spell.SpellEffectInfo{
 			{
 				EffectIndex: 0,
@@ -109,9 +109,10 @@ func TestFireball_FullCastLifecycle(t *testing.T) {
 		t.Fatalf("expected StateLaunched after cast, got %v", s.State)
 	}
 
-	// No damage yet
-	if s.TargetInfos[0].Damage != 0 {
-		t.Fatalf("expected 0 damage during flight, got %.0f", s.TargetInfos[0].Damage)
+	// 对齐 TC: LaunchTarget 阶段在 Cast() 中执行，伤害在发射时已计算
+	minDmg := 678.0 + 100.0
+	if s.TargetInfos[0].Damage < minDmg {
+		t.Fatalf("expected damage >= %.0f after launch, got %.0f", minDmg, s.TargetInfos[0].Damage)
 	}
 
 	// Projectile arrives
@@ -122,13 +123,12 @@ func TestFireball_FullCastLifecycle(t *testing.T) {
 	}
 
 	ti := s.TargetInfos[0]
-	minDmg := 678.0 + 100.0
 	if ti.Damage < minDmg {
-		t.Errorf("expected damage >= %.0f, got %.0f", minDmg, ti.Damage)
+		t.Errorf("expected damage >= %.0f after hit, got %.0f", minDmg, ti.Damage)
 	}
 }
 
-// Task 5.2: No damage before projectile arrives
+// Task 5.2: Damage calculated at launch time (TC-aligned), spell stays in flight
 func TestFireball_NoDamageDuringFlight(t *testing.T) {
 	caster := newTestUnit(1, 0)
 	target := newTestUnit(2, 30)
@@ -147,14 +147,16 @@ func TestFireball_NoDamageDuringFlight(t *testing.T) {
 		t.Fatal("expected positive HitTimer for projectile spell")
 	}
 
+	// 对齐 TC: LaunchTarget 在 Cast() 中执行，伤害在发射时已计算（不是命中时）
+	if s.TargetInfos[0].Damage == 0 {
+		t.Errorf("expected damage calculated at launch time, got 0")
+	}
+
 	// Partial update — not enough for projectile to arrive
 	s.Update(100)
 
 	if s.State != spell.StateLaunched {
 		t.Fatalf("expected still StateLaunched, got %v", s.State)
-	}
-	if s.TargetInfos[0].Damage != 0 {
-		t.Errorf("expected 0 damage during flight, got %.0f", s.TargetInfos[0].Damage)
 	}
 }
 
@@ -229,7 +231,7 @@ func TestFireball_CritIncreasesDamage(t *testing.T) {
 		s := spell.NewSpell(spell.SpellID(info.ID), info, caster, spell.TriggeredNone)
 		s.Targets.UnitTargetID = 2
 		s.Prepare()
-		s.Update(3500) // cast
+		s.Update(3500)       // cast
 		s.Update(s.HitTimer) // projectile
 		totalNormal += s.TargetInfos[0].Damage
 	}
@@ -242,7 +244,8 @@ func TestFireball_CritIncreasesDamage(t *testing.T) {
 		for j := range s.TargetInfos {
 			s.TargetInfos[j].Crit = true
 		}
-		effect.ProcessAll(s)
+		effect.ProcessLaunchPhase(s)
+		effect.ProcessHitPhase(s)
 		totalCrit += s.TargetInfos[0].Damage
 	}
 
@@ -265,11 +268,15 @@ func TestFireball_AppliesDoTAura(t *testing.T) {
 	s.Targets.UnitTargetID = 2
 	s.Prepare()
 
-	origFn := spell.ProcessEffectsFn
-	spell.ProcessEffectsFn = func(sp *spell.Spell) {
-		effect.ProcessAll(sp)
+	origLaunchFn := spell.ProcessLaunchPhaseFn
+	origHitFn := spell.ProcessHitPhaseFn
+	spell.ProcessLaunchPhaseFn = func(sp *spell.Spell) {
+		effect.ProcessLaunchPhase(sp)
 	}
-	defer func() { spell.ProcessEffectsFn = origFn }()
+	spell.ProcessHitPhaseFn = func(sp *spell.Spell) {
+		effect.ProcessHitPhase(sp)
+	}
+	defer func() { spell.ProcessLaunchPhaseFn = origLaunchFn; spell.ProcessHitPhaseFn = origHitFn }()
 
 	s.Update(3500)       // cast
 	s.Update(s.HitTimer) // projectile

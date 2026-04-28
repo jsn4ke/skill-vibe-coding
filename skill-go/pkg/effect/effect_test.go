@@ -12,10 +12,10 @@ import (
 func TestHandleSchoolDamage_WithSpellPower(t *testing.T) {
 	ctx := &Context{
 		EffectInfo: &spell.SpellEffectInfo{
-			EffectType: spell.EffectSchoolDamage,
-			BasePoints: 678,
+			EffectType:   spell.EffectSchoolDamage,
+			BasePoints:   678,
 			BaseDieSides: 0,
-			BonusCoeff: 1.0,
+			BonusCoeff:   1.0,
 		},
 		CasterSpellPower: 100,
 		Crit:             false,
@@ -33,10 +33,10 @@ func TestHandleSchoolDamage_WithSpellPower(t *testing.T) {
 func TestHandleSchoolDamage_ZeroSpellPower(t *testing.T) {
 	ctx := &Context{
 		EffectInfo: &spell.SpellEffectInfo{
-			EffectType: spell.EffectSchoolDamage,
-			BasePoints: 678,
+			EffectType:   spell.EffectSchoolDamage,
+			BasePoints:   678,
 			BaseDieSides: 0,
-			BonusCoeff: 1.0,
+			BonusCoeff:   1.0,
 		},
 		CasterSpellPower: 0,
 		Crit:             false,
@@ -51,10 +51,10 @@ func TestHandleSchoolDamage_ZeroSpellPower(t *testing.T) {
 func TestHandleSchoolDamage_WithCrit(t *testing.T) {
 	ctx := &Context{
 		EffectInfo: &spell.SpellEffectInfo{
-			EffectType: spell.EffectSchoolDamage,
-			BasePoints: 678,
+			EffectType:   spell.EffectSchoolDamage,
+			BasePoints:   678,
 			BaseDieSides: 0,
-			BonusCoeff: 1.0,
+			BonusCoeff:   1.0,
 		},
 		CasterSpellPower: 100,
 		Crit:             true,
@@ -70,10 +70,10 @@ func TestHandleSchoolDamage_WithCrit(t *testing.T) {
 func TestHandleSchoolDamage_WithVariance(t *testing.T) {
 	ctx := &Context{
 		EffectInfo: &spell.SpellEffectInfo{
-			EffectType: spell.EffectSchoolDamage,
-			BasePoints: 678,
+			EffectType:   spell.EffectSchoolDamage,
+			BasePoints:   678,
 			BaseDieSides: 164,
-			BonusCoeff: 1.0,
+			BonusCoeff:   1.0,
 		},
 		CasterSpellPower: 0,
 		Crit:             false,

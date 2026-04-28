@@ -56,12 +56,17 @@ type CastFlags uint32
 // EffectProcessorFunc 是效果处理函数的类型
 type EffectProcessorFunc func(s *Spell)
 
-// ProcessEffectsFn 是全局效果处理函数，由 effect 包的 init() 设置
-var ProcessEffectsFn EffectProcessorFunc
+// ProcessLaunchPhaseFn 是 Launch 阶段处理函数，由 effect 包的 init() 设置。
+// 在 Cast() 中调用，对齐 TC HandleLaunchPhase()。
+var ProcessLaunchPhaseFn EffectProcessorFunc
+
+// ProcessHitPhaseFn 是 Hit 阶段处理函数，由 effect 包的 init() 设置。
+// 在 HandleImmediate() / 弹道命中时调用，对齐 TC _handle_immediate_phase() + DoProcessTargetContainer()。
+var ProcessHitPhaseFn EffectProcessorFunc
 
 const (
-	TriggeredNone        CastFlags = 0
-	TriggeredIgnoreGCD   CastFlags = 1 << iota
+	TriggeredNone      CastFlags = 0
+	TriggeredIgnoreGCD CastFlags = 1 << iota
 	TriggeredIgnoreCooldown
 	TriggeredIgnorePower
 	TriggeredIgnoreCastItems
@@ -81,32 +86,32 @@ type AuraCreatedFunc func(a interface{})
 
 // TargetInfo 包含法术目标的命中信息
 type TargetInfo struct {
-	TargetID     uint64
-	MissReason   HitResult
-	EfffectMask  uint8
-	Damage       float64
-	Healing      float64
-	Crit         bool
+	TargetID    uint64
+	MissReason  HitResult
+	EfffectMask uint8
+	Damage      float64
+	Healing     float64
+	Crit        bool
 }
 
 // Spell 表示一个法术实例，包含完整的施法状态和数据
 type Spell struct {
-	ID          SpellID
-	Info        *SpellInfo
-	State       SpellState
-	Caster      Caster
-	CastFlags   CastFlags
-	Targets     TargetData
-	CastTime    uint32
-	Timer       int32
-	HitTimer    int32
-	Result      SpellCastResult
-	TargetInfos []TargetInfo
-	Bus            *event.Bus
-	OnCancel       CancelHook
-	OnAuraCreated  AuraCreatedFunc
-	SpellValues    map[uint8]float64
-	Engine         SpellEngineRef
+	ID            SpellID
+	Info          *SpellInfo
+	State         SpellState
+	Caster        Caster
+	CastFlags     CastFlags
+	Targets       TargetData
+	CastTime      uint32
+	Timer         int32
+	HitTimer      int32
+	Result        SpellCastResult
+	TargetInfos   []TargetInfo
+	Bus           *event.Bus
+	OnCancel      CancelHook
+	OnAuraCreated AuraCreatedFunc
+	SpellValues   map[uint8]float64
+	Engine        SpellEngineRef
 }
 
 // Caster 是施法者接口，对齐 TC 的 Unit 施法相关方法
@@ -357,6 +362,7 @@ func (s *Spell) Cast(skipCheck bool) {
 		s.TakePower()
 	}
 
+	s.HandleLaunchPhase()
 	s.State = StateLaunched
 
 	if s.Bus != nil {
@@ -384,9 +390,8 @@ func (s *Spell) Cast(skipCheck bool) {
 	}
 
 	if s.Info.IsChanneled {
-		// 对引导法术执行效果管线
-	// 对齐 TC: 引导法术在进入引导状态前处理效果
-		s.ProcessEffects()
+		// 对齐 TC: 引导法术在进入引导状态前处理 Hit 阶段
+		s.HandleHitPhase()
 		s.State = StateChanneling
 		s.Timer = int32(s.Info.Duration)
 	} else if s.Info.Speed > 0 {
@@ -399,11 +404,19 @@ func (s *Spell) Cast(skipCheck bool) {
 	}
 }
 
-// ProcessEffects 处理效果管线并发布 SpellHit 事件。不调用 Finish()，由调用者决定何时完成。
-// 对齐 TC handle_immediate 的四阶段模型：Launch → LaunchTarget → Hit → HitTarget。
-func (s *Spell) ProcessEffects() {
-	if ProcessEffectsFn != nil {
-		ProcessEffectsFn(s)
+// HandleLaunchPhase 处理 Launch 阶段（Launch + LaunchTarget），在 Cast() 中调用。
+// 对齐 TC HandleLaunchPhase()。
+func (s *Spell) HandleLaunchPhase() {
+	if ProcessLaunchPhaseFn != nil {
+		ProcessLaunchPhaseFn(s)
+	}
+}
+
+// HandleHitPhase 处理 Hit 阶段（Hit + HitTarget），在 HandleImmediate() / 弹道命中时调用。
+// 对齐 TC _handle_immediate_phase() + DoProcessTargetContainer()。
+func (s *Spell) HandleHitPhase() {
+	if ProcessHitPhaseFn != nil {
+		ProcessHitPhaseFn(s)
 	}
 	if s.Bus != nil {
 		for i := range s.TargetInfos {
@@ -420,9 +433,9 @@ func (s *Spell) ProcessEffects() {
 	}
 }
 
-// HandleImmediate 处理即时法术的效果并完成
+// HandleImmediate 处理即时法术的 Hit 阶段并完成，对齐 TC handle_immediate()
 func (s *Spell) HandleImmediate() {
-	s.ProcessEffects()
+	s.HandleHitPhase()
 	s.Finish(CastOK)
 }
 
@@ -740,7 +753,7 @@ type casterAdapter struct {
 	caster Caster
 }
 
-func (ca *casterAdapter) GetID() uint64              { return ca.caster.GetID() }
+func (ca *casterAdapter) GetID() uint64 { return ca.caster.GetID() }
 func (ca *casterAdapter) GetPosition() targeting.TargetPosition {
 	return &posAdapter{pos: ca.caster.GetPosition()}
 }

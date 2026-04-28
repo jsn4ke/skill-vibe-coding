@@ -1,16 +1,14 @@
-# Go Race Test Rule
+# Go Test Rule
 
-After any successful `go run` or `go build` of the skill-go project, always run race detection tests to catch concurrency issues:
-
-```bash
-go test -race ./...
-```
-
-If no test files exist yet, at minimum verify the build is race-safe:
+After any code change to the skill-go project, verify with:
 
 ```bash
-go build -race ./...
-go run -race ./server/
+gofmt -w . && go build ./... && go test ./... -count=1
 ```
 
-Do not mark implementation as complete until race detection passes cleanly with no warnings.
+Do not mark implementation as complete until all three steps pass:
+1. `gofmt` — no formatting issues
+2. `go build` — compiles cleanly
+3. `go test` — all tests pass
+
+On Windows, race detection (`-race`) may fail with STATUS_DLL_NOT_FOUND. In that case, run without `-race` and note it. On other platforms, prefer `go test -race ./...`.

@@ -31,21 +31,21 @@ type Context struct {
 var ScriptRegistry *script.Registry
 
 var handlers = map[spell.EffectType]EffectHandler{
-	spell.EffectSchoolDamage: handleSchoolDamage,
-	spell.EffectHeal:         handleHeal,
-	spell.EffectHealPct:      handleHealPct,
-	spell.EffectApplyAura:    handleApplyAura,
-	spell.EffectEnergize:     handleEnergize,
-	spell.EffectEnergizePct:  handleEnergizePct,
-	spell.EffectTriggerSpell: handleTriggerSpell,
-	spell.EffectWeaponDamage: handleWeaponDamage,
-	spell.EffectSummon:       handleSummon,
-	spell.EffectDispel:       handleDispel,
-	spell.EffectDummy:        handleDummy,
+	spell.EffectSchoolDamage:  handleSchoolDamage,
+	spell.EffectHeal:          handleHeal,
+	spell.EffectHealPct:       handleHealPct,
+	spell.EffectApplyAura:     handleApplyAura,
+	spell.EffectEnergize:      handleEnergize,
+	spell.EffectEnergizePct:   handleEnergizePct,
+	spell.EffectTriggerSpell:  handleTriggerSpell,
+	spell.EffectWeaponDamage:  handleWeaponDamage,
+	spell.EffectSummon:        handleSummon,
+	spell.EffectDispel:        handleDispel,
+	spell.EffectDummy:         handleDummy,
 	spell.EffectTeleportUnits: handleTeleport,
-	spell.EffectCharge:       handleCharge,
-	spell.EffectKnockBack:    handleKnockBack,
-	spell.EffectLeap:         handleLeap,
+	spell.EffectCharge:        handleCharge,
+	spell.EffectKnockBack:     handleKnockBack,
+	spell.EffectLeap:          handleLeap,
 }
 
 // Process 按效果类型分发处理。
@@ -57,9 +57,9 @@ func Process(ctx *Context) {
 	h(ctx)
 }
 
-// ProcessAll 处理法术的所有效果，按 TC 四阶段模型分发：Launch → LaunchTarget → Hit → HitTarget。
-// 对齐 TC handle_immediate: HandleLaunchPhase() → _handle_immediate_phase() → DoProcessTargetContainer()。
-func ProcessAll(s *spell.Spell) {
+// ProcessLaunchPhase 处理法术的 Launch 阶段（Launch + LaunchTarget），在 Cast() 中调用。
+// 对齐 TC HandleLaunchPhase()。
+func ProcessLaunchPhase(s *spell.Spell) {
 	if s.Info == nil {
 		return
 	}
@@ -69,16 +69,11 @@ func ProcessAll(s *spell.Spell) {
 	// 阶段 1: Launch（无目标），对齐 TC HandleLaunchPhase 的 LAUNCH 部分
 	for i := range s.Info.Effects {
 		ei := &s.Info.Effects[i]
-		isArea := spell.IsAreaTarget(ei.TargetA) || spell.IsAreaTarget(ei.TargetB)
-		targetID := casterID
-		if len(s.TargetInfos) > 0 && !isArea {
-			continue // 非 area effect 的 Launch 阶段不需要无目标处理
-		}
 		ctx := &Context{
 			Spell:            s,
 			EffectInfo:       ei,
 			CasterID:         casterID,
-			TargetID:         targetID,
+			TargetID:         casterID,
 			Mode:             spell.HandleLaunch,
 			CasterSpellPower: sp,
 		}
@@ -88,22 +83,6 @@ func ProcessAll(s *spell.Spell) {
 	// 阶段 2: LaunchTarget（每目标），对齐 TC DoEffectOnLaunchTarget
 	for i := range s.Info.Effects {
 		ei := &s.Info.Effects[i]
-		isArea := spell.IsAreaTarget(ei.TargetA) || spell.IsAreaTarget(ei.TargetB)
-
-		if len(s.TargetInfos) == 0 && isArea {
-			// 区域效果无目标时用施法者作为目标
-			ctx := &Context{
-				Spell:            s,
-				EffectInfo:       ei,
-				CasterID:         casterID,
-				TargetID:         casterID,
-				Mode:             spell.HandleLaunchTarget,
-				CasterSpellPower: sp,
-			}
-			processWithScript(ctx, script.HookOnEffectLaunchTarget)
-			continue
-		}
-
 		for j := range s.TargetInfos {
 			ti := &s.TargetInfos[j]
 			if ti.EfffectMask&(1<<ei.EffectIndex) == 0 {
@@ -123,20 +102,25 @@ func ProcessAll(s *spell.Spell) {
 			ti.Healing += ctx.FinalHeal
 		}
 	}
+}
+
+// ProcessHitPhase 处理法术的 Hit 阶段（Hit + HitTarget），在 HandleImmediate() / 弹道命中时调用。
+// 对齐 TC _handle_immediate_phase() + DoProcessTargetContainer()。
+func ProcessHitPhase(s *spell.Spell) {
+	if s.Info == nil {
+		return
+	}
+	sp := s.Caster.GetStatValue(3) // stat.SpellPower = 3
+	casterID := s.Caster.GetID()
 
 	// 阶段 3: Hit（无目标），对齐 TC _handle_immediate_phase 的 HIT 部分
 	for i := range s.Info.Effects {
 		ei := &s.Info.Effects[i]
-		isArea := spell.IsAreaTarget(ei.TargetA) || spell.IsAreaTarget(ei.TargetB)
-		targetID := casterID
-		if len(s.TargetInfos) > 0 && !isArea {
-			continue
-		}
 		ctx := &Context{
 			Spell:            s,
 			EffectInfo:       ei,
 			CasterID:         casterID,
-			TargetID:         targetID,
+			TargetID:         casterID,
 			Mode:             spell.HandleHit,
 			CasterSpellPower: sp,
 		}
@@ -146,24 +130,6 @@ func ProcessAll(s *spell.Spell) {
 	// 阶段 4: HitTarget（每目标），对齐 TC DoTargetSpellHit 的 HIT_TARGET 部分
 	for i := range s.Info.Effects {
 		ei := &s.Info.Effects[i]
-		isArea := spell.IsAreaTarget(ei.TargetA) || spell.IsAreaTarget(ei.TargetB)
-
-		if len(s.TargetInfos) == 0 && isArea {
-			ctx := &Context{
-				Spell:            s,
-				EffectInfo:       ei,
-				CasterID:         casterID,
-				TargetID:         casterID,
-				Mode:             spell.HandleHitTarget,
-				CasterSpellPower: sp,
-			}
-			processWithScript(ctx, script.HookOnEffectHitTarget)
-			if ctx.AppliedAura != nil && s.OnAuraCreated != nil {
-				s.OnAuraCreated(ctx.AppliedAura)
-			}
-			continue
-		}
-
 		for j := range s.TargetInfos {
 			ti := &s.TargetInfos[j]
 			if ti.EfffectMask&(1<<ei.EffectIndex) == 0 {
@@ -202,7 +168,8 @@ func processWithScript(ctx *Context, hook script.Hook) {
 
 // init 注册效果管线到 spell 包。
 func init() {
-	spell.ProcessEffectsFn = ProcessAll
+	spell.ProcessLaunchPhaseFn = ProcessLaunchPhase
+	spell.ProcessHitPhaseFn = ProcessHitPhase
 }
 
 // handleSchoolDamage 处理法术伤害效果，对齐 TC 的 LAUNCH_TARGET 阶段。
