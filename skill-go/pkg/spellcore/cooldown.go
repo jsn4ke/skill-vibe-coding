@@ -1,15 +1,13 @@
-package cooldown
+package spellcore
 
 import (
 	"sync"
 	"time"
-
-	"skill-go/pkg/spell"
 )
 
 // CooldownEntry 表示一个冷却记录，对齐 TC 的 CooldownEntry。
 type CooldownEntry struct {
-	SpellID    spell.SpellID
+	SpellID    SpellID
 	CategoryID uint32
 	EndTime    time.Time
 	OnHold     bool
@@ -24,11 +22,11 @@ type ChargeEntry struct {
 // History 管理法术冷却、充能、公共冷却和魔法学校锁定，对齐 TC 的 SpellHistory。
 type History struct {
 	mu                sync.RWMutex
-	cooldowns         map[spell.SpellID]*CooldownEntry
+	cooldowns         map[SpellID]*CooldownEntry
 	categoryCooldowns map[uint32]*CooldownEntry
-	charges           map[spell.SpellID][]ChargeEntry
-	maxCharges        map[spell.SpellID]int32
-	chargeRecharge    map[spell.SpellID]time.Duration
+	charges           map[SpellID][]ChargeEntry
+	maxCharges        map[SpellID]int32
+	chargeRecharge    map[SpellID]time.Duration
 	gcdCategory       map[uint32]time.Time
 	schoolLockouts    [7]time.Time
 }
@@ -36,17 +34,17 @@ type History struct {
 // NewHistory 创建一个空的冷却历史记录。
 func NewHistory() *History {
 	return &History{
-		cooldowns:         make(map[spell.SpellID]*CooldownEntry),
+		cooldowns:         make(map[SpellID]*CooldownEntry),
 		categoryCooldowns: make(map[uint32]*CooldownEntry),
-		charges:           make(map[spell.SpellID][]ChargeEntry),
-		maxCharges:        make(map[spell.SpellID]int32),
-		chargeRecharge:    make(map[spell.SpellID]time.Duration),
+		charges:           make(map[SpellID][]ChargeEntry),
+		maxCharges:        make(map[SpellID]int32),
+		chargeRecharge:    make(map[SpellID]time.Duration),
 		gcdCategory:       make(map[uint32]time.Time),
 	}
 }
 
 // AddCooldown 为法术添加冷却记录，同时记录分类冷却。
-func (h *History) AddCooldown(spellID spell.SpellID, categoryID uint32, duration time.Duration) {
+func (h *History) AddCooldown(spellID SpellID, categoryID uint32, duration time.Duration) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -65,8 +63,8 @@ func (h *History) AddCooldown(spellID spell.SpellID, categoryID uint32, duration
 	}
 }
 
-// AddCharge 初始化法术的充能系统。首次调用时创建所有充能条目。
-func (h *History) AddCharge(spellID spell.SpellID, maxCharges int32, rechargeTime time.Duration) {
+// AddCharge 初始化法术的充能系统。
+func (h *History) AddCharge(spellID SpellID, maxCharges int32, rechargeTime time.Duration) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -82,8 +80,8 @@ func (h *History) AddCharge(spellID spell.SpellID, maxCharges int32, rechargeTim
 	}
 }
 
-// UseCharge 消耗一个充能。选择最早可用的充能条目开始充能计时。
-func (h *History) UseCharge(spellID spell.SpellID) bool {
+// UseCharge 消耗一个充能。
+func (h *History) UseCharge(spellID SpellID) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -96,7 +94,6 @@ func (h *History) UseCharge(spellID spell.SpellID) bool {
 	charges := h.charges[spellID]
 	recharge := h.chargeRecharge[spellID]
 
-	// 找到最早完成充能的条目
 	var oldestIdx int
 	oldestTime := charges[0].RechargeEnd
 	for i, c := range charges {
@@ -106,7 +103,6 @@ func (h *History) UseCharge(spellID spell.SpellID) bool {
 		}
 	}
 
-	// 充能开始时间取当前时间和最早完成时间的较晚者
 	startTime := now
 	if oldestTime.After(now) {
 		startTime = oldestTime
@@ -118,8 +114,7 @@ func (h *History) UseCharge(spellID spell.SpellID) bool {
 	return true
 }
 
-// availableCharges 计算当前可用的充能数量。
-func (h *History) availableCharges(spellID spell.SpellID) int32 {
+func (h *History) availableCharges(spellID SpellID) int32 {
 	charges := h.charges[spellID]
 	if len(charges) == 0 {
 		return h.maxCharges[spellID]
@@ -134,8 +129,8 @@ func (h *History) availableCharges(spellID spell.SpellID) int32 {
 	return count
 }
 
-// IsReady 检查法术是否就绪（冷却结束、分类冷却结束、充能可用）。
-func (h *History) IsReady(spellID spell.SpellID, categoryID uint32) bool {
+// IsReady 检查法术是否就绪。
+func (h *History) IsReady(spellID SpellID, categoryID uint32) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -156,7 +151,7 @@ func (h *History) IsReady(spellID spell.SpellID, categoryID uint32) bool {
 }
 
 // CancelCooldown 取消法术的冷却记录。
-func (h *History) CancelCooldown(spellID spell.SpellID) {
+func (h *History) CancelCooldown(spellID SpellID) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.cooldowns, spellID)

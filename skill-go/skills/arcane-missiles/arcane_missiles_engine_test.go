@@ -7,7 +7,7 @@ import (
 
 	"skill-go/pkg/engine"
 	"skill-go/pkg/entity"
-	"skill-go/pkg/spell"
+	"skill-go/pkg/spellcore"
 	"skill-go/pkg/stat"
 )
 
@@ -135,7 +135,7 @@ func TestArcaneMissiles_EngineCancelRemovesAura(t *testing.T) {
 
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
 
-	if s.State != spell.StateChanneling {
+	if s.State != spellcore.StateChanneling {
 		t.Fatalf("expected StateChanneling, got %v", s.State)
 	}
 	if len(caster.GetOwnedAuras()) == 0 {
@@ -144,7 +144,7 @@ func TestArcaneMissiles_EngineCancelRemovesAura(t *testing.T) {
 
 	s.Cancel()
 
-	if s.State != spell.StateFinished {
+	if s.State != spellcore.StateFinished {
 		t.Errorf("expected StateFinished after cancel, got %v", s.State)
 	}
 	if len(caster.GetOwnedAuras()) != 0 {
@@ -171,7 +171,7 @@ func TestArcaneMissiles_EngineMovementCancelsChannel(t *testing.T) {
 
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
 
-	if s.State != spell.StateChanneling {
+	if s.State != spellcore.StateChanneling {
 		t.Fatalf("expected StateChanneling, got %v", s.State)
 	}
 
@@ -183,10 +183,10 @@ func TestArcaneMissiles_EngineMovementCancelsChannel(t *testing.T) {
 	eng.Advance(100) // movement detected, isMoving=true
 	eng.Advance(100) // spell sees isMoving=true, cancels
 
-	if s.State != spell.StateFinished {
+	if s.State != spellcore.StateFinished {
 		t.Errorf("expected StateFinished after movement, got %v", s.State)
 	}
-	if s.Result != spell.CastFailedInterrupted {
+	if s.Result != spellcore.CastFailedInterrupted {
 		t.Errorf("expected CastFailedInterrupted, got %v", s.Result)
 	}
 }
@@ -201,7 +201,7 @@ func TestArcaneMissiles_EngineTargetDeathCancelsChannel(t *testing.T) {
 	RegisterScripts(eng.Registry(), caster, eng)
 
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
-	if s.State != spell.StateChanneling {
+	if s.State != spellcore.StateChanneling {
 		t.Fatalf("expected StateChanneling, got %v", s.State)
 	}
 
@@ -214,7 +214,7 @@ func TestArcaneMissiles_EngineTargetDeathCancelsChannel(t *testing.T) {
 	// Advance — validateChannelTargets should detect dead target
 	eng.Advance(100)
 
-	if s.State != spell.StateFinished {
+	if s.State != spellcore.StateFinished {
 		t.Errorf("expected StateFinished after target death, got %v", s.State)
 	}
 }

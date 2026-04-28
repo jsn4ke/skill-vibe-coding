@@ -1,10 +1,9 @@
-package spell
+package spellcore
 
 import (
+	"math"
 	"skill-go/pkg/event"
 	"skill-go/pkg/targeting"
-
-	"math"
 )
 
 // SpellID 是法术的唯一标识符
@@ -56,14 +55,6 @@ type CastFlags uint32
 // EffectProcessorFunc 是效果处理函数的类型
 type EffectProcessorFunc func(s *Spell)
 
-// ProcessLaunchPhaseFn 是 Launch 阶段处理函数，由 effect 包的 init() 设置。
-// 在 Cast() 中调用，对齐 TC HandleLaunchPhase()。
-var ProcessLaunchPhaseFn EffectProcessorFunc
-
-// ProcessHitPhaseFn 是 Hit 阶段处理函数，由 effect 包的 init() 设置。
-// 在 HandleImmediate() / 弹道命中时调用，对齐 TC _handle_immediate_phase() + DoProcessTargetContainer()。
-var ProcessHitPhaseFn EffectProcessorFunc
-
 const (
 	TriggeredNone      CastFlags = 0
 	TriggeredIgnoreGCD CastFlags = 1 << iota
@@ -81,8 +72,8 @@ const (
 // CancelHook 是取消回调的类型
 type CancelHook func()
 
-// AuraCreatedFunc 在效果管线创建光环时调用。使用 interface{} 避免导入 aura 包
-type AuraCreatedFunc func(a interface{})
+// AuraCreatedFunc 在效果管线创建光环时调用。
+type AuraCreatedFunc func(a *Aura)
 
 // TargetInfo 包含法术目标的命中信息
 type TargetInfo struct {
@@ -423,17 +414,13 @@ func (s *Spell) Cast(skipCheck bool) {
 // HandleLaunchPhase 处理 Launch 阶段（Launch + LaunchTarget），在 Cast() 中调用。
 // 对齐 TC HandleLaunchPhase()。
 func (s *Spell) HandleLaunchPhase() {
-	if ProcessLaunchPhaseFn != nil {
-		ProcessLaunchPhaseFn(s)
-	}
+	ProcessLaunchPhase(s)
 }
 
 // HandleHitPhase 处理 Hit 阶段（Hit + HitTarget），在 HandleImmediate() / 弹道命中时调用。
 // 对齐 TC _handle_immediate_phase() + DoProcessTargetContainer()。
 func (s *Spell) HandleHitPhase() {
-	if ProcessHitPhaseFn != nil {
-		ProcessHitPhaseFn(s)
-	}
+	ProcessHitPhase(s)
 	if s.Bus != nil {
 		for i := range s.TargetInfos {
 			ti := &s.TargetInfos[i]
@@ -798,7 +785,7 @@ func (s *Spell) GetUnitsInRadius(center [3]float64, radius float64, excludeID ui
 	return s.Engine.GetTargetUnitsInRadius(center, radius, excludeID)
 }
 
-// casterAdapter 将 spell.Caster 适配为 targeting.TargetUnit。
+// casterAdapter 将 Caster 适配为 targeting.TargetUnit。
 type casterAdapter struct {
 	caster Caster
 }
@@ -810,7 +797,7 @@ func (ca *casterAdapter) GetPosition() targeting.TargetPosition {
 func (ca *casterAdapter) GetEntityType() uint8 { return 0 } // Caster 接口无 EntityType，默认 0
 func (ca *casterAdapter) IsAlive() bool        { return ca.caster.IsAlive() }
 
-// posAdapter 将 spell.Position 适配为 targeting.TargetPosition。
+// posAdapter 将 Position 适配为 targeting.TargetPosition。
 type posAdapter struct {
 	pos Position
 }

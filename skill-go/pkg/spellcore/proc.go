@@ -1,10 +1,8 @@
-package proc
+package spellcore
 
 import (
 	"math/rand"
 	"time"
-
-	"skill-go/pkg/spell"
 )
 
 // ProcFlag 表示触发条件的位掩码，对齐 TC 的 ProcFlags。
@@ -29,7 +27,7 @@ const (
 	FlagAttackSwing
 )
 
-// SpellTypeMask 表示法术类型的位掩码，用于过滤触发条件。
+// SpellTypeMask 表示法术类型的位掩码。
 type SpellTypeMask uint8
 
 const (
@@ -40,7 +38,7 @@ const (
 	TypeMaskAll SpellTypeMask = TypeMaskDamage | TypeMaskHeal | TypeMaskNonDmgHeal
 )
 
-// SpellPhaseMask 表示法术阶段的位掩码，用于过滤触发时机。
+// SpellPhaseMask 表示法术阶段的位掩码。
 type SpellPhaseMask uint8
 
 const (
@@ -50,52 +48,53 @@ const (
 	PhaseFinish
 )
 
-// HitMask 表示命中结果的位掩码，用于过滤触发条件。
-type HitMask uint8
+// ProcHitMask 表示命中结果的位掩码，用于过滤触发条件。
+// 使用 Proc 前缀避免与 spell.HitResult 常量冲突。
+type ProcHitMask uint8
 
 const (
-	HitNone   HitMask = 0
-	HitNormal HitMask = 1 << iota
-	HitCrit
-	HitMiss
-	HitImmune
+	ProcHitNone   ProcHitMask = 0
+	ProcHitNormal ProcHitMask = 1 << iota
+	ProcHitCrit
+	ProcHitMiss
+	ProcHitImmune
 )
 
 // Entry 表示一个触发器条目，对齐 TC 的 ProcTriggerEntry。
 type Entry struct {
-	SpellID      spell.SpellID
+	SpellID      SpellID
 	Flags        ProcFlag
 	SpellType    SpellTypeMask
 	SpellPhase   SpellPhaseMask
-	HitFlags     HitMask
+	HitFlags     ProcHitMask
 	Chance       float64
 	PPM          float64
 	Cooldown     time.Duration
 	Charges      int32
-	TriggerSpell spell.SpellID
+	TriggerSpell SpellID
 	lastProc     time.Time
 }
 
-// Manager 管理触发系统，对齐 TC 的 ProcSystem。
-type Manager struct {
+// ProcManager 管理触发系统，对齐 TC 的 ProcSystem。
+type ProcManager struct {
 	entries []Entry
 	rng     *rand.Rand
 }
 
-// NewManager 创建一个新的触发器管理器。
-func NewManager() *Manager {
-	return &Manager{
+// NewProcManager 创建一个新的触发器管理器。
+func NewProcManager() *ProcManager {
+	return &ProcManager{
 		rng: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
 // Register 注册一个触发器条目。
-func (m *Manager) Register(entry Entry) {
+func (m *ProcManager) Register(entry Entry) {
 	m.entries = append(m.entries, entry)
 }
 
 // Unregister 按 SpellID 移除所有匹配的触发器条目。
-func (m *Manager) Unregister(spellID spell.SpellID) {
+func (m *ProcManager) Unregister(spellID SpellID) {
 	var remaining []Entry
 	for _, e := range m.entries {
 		if e.SpellID != spellID {
@@ -105,13 +104,13 @@ func (m *Manager) Unregister(spellID spell.SpellID) {
 	m.entries = remaining
 }
 
-// ProcEvent 表示一次触发事件，包含事件标志和上下文信息。
+// ProcEvent 表示一次触发事件。
 type ProcEvent struct {
 	Flag      ProcFlag
-	SpellID   spell.SpellID
+	SpellID   SpellID
 	TypeMask  SpellTypeMask
 	PhaseMask SpellPhaseMask
-	HitMask   HitMask
+	HitMask   ProcHitMask
 	SourceID  uint64
 	TargetID  uint64
 	Damage    float64
@@ -120,14 +119,13 @@ type ProcEvent struct {
 
 // ProcResult 表示触发判定的结果。
 type ProcResult struct {
-	TriggeredSpell spell.SpellID
+	TriggeredSpell SpellID
 	SourceID       uint64
 	TargetID       uint64
 }
 
 // Check 检查所有触发器条目是否匹配当前事件，返回所有触发的结果。
-// 匹配条件：标志位、法术类型、法术阶段、命中结果、冷却时间、概率掷骰。
-func (m *Manager) Check(event ProcEvent) []ProcResult {
+func (m *ProcManager) Check(event ProcEvent) []ProcResult {
 	var results []ProcResult
 	now := time.Now()
 
@@ -143,7 +141,7 @@ func (m *Manager) Check(event ProcEvent) []ProcResult {
 		if e.SpellPhase != PhaseNone && e.SpellPhase&event.PhaseMask == 0 {
 			continue
 		}
-		if e.HitFlags != HitNone && e.HitFlags&event.HitMask == 0 {
+		if e.HitFlags != ProcHitNone && e.HitFlags&event.HitMask == 0 {
 			continue
 		}
 
@@ -175,8 +173,7 @@ func (m *Manager) Check(event ProcEvent) []ProcResult {
 	return results
 }
 
-// rollChance 根据触发器条目的概率或 PPM 进行掷骰判定。
-func (m *Manager) rollChance(e *Entry) bool {
+func (m *ProcManager) rollChance(e *Entry) bool {
 	if e.PPM > 0 {
 		return m.rng.Float64() < e.PPM
 	}

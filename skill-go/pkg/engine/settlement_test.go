@@ -1,10 +1,9 @@
 package engine
 
 import (
-	"skill-go/pkg/aura"
 	"skill-go/pkg/entity"
 	"skill-go/pkg/event"
-	"skill-go/pkg/spell"
+	"skill-go/pkg/spellcore"
 	"skill-go/pkg/stat"
 	"skill-go/pkg/unit"
 	"testing"
@@ -23,30 +22,30 @@ func createTestEngine() (*Engine, *unit.Unit, *unit.Unit) {
 }
 
 // damageSpellInfo 创建一个简单的伤害法术 SpellInfo
-func damageSpellInfo() *spell.SpellInfo {
-	return &spell.SpellInfo{
+func damageSpellInfo() *spellcore.SpellInfo {
+	return &spellcore.SpellInfo{
 		ID:   100,
 		Name: "TestDamage",
-		Effects: []spell.SpellEffectInfo{
+		Effects: []spellcore.SpellEffectInfo{
 			{
-				EffectType: spell.EffectSchoolDamage,
+				EffectType: spellcore.EffectSchoolDamage,
 				BasePoints: 100,
-				TargetA:    spell.TargetUnitTargetEnemy,
+				TargetA:    spellcore.TargetUnitTargetEnemy,
 			},
 		},
 	}
 }
 
 // healSpellInfo 创建一个简单的治疗法术 SpellInfo
-func healSpellInfo() *spell.SpellInfo {
-	return &spell.SpellInfo{
+func healSpellInfo() *spellcore.SpellInfo {
+	return &spellcore.SpellInfo{
 		ID:   101,
 		Name: "TestHeal",
-		Effects: []spell.SpellEffectInfo{
+		Effects: []spellcore.SpellEffectInfo{
 			{
-				EffectType: spell.EffectHeal,
+				EffectType: spellcore.EffectHeal,
 				BasePoints: 100,
-				TargetA:    spell.TargetUnitCaster,
+				TargetA:    spellcore.TargetUnitCaster,
 			},
 		},
 	}
@@ -122,17 +121,17 @@ func TestSettlement_DamageBreaksAura(t *testing.T) {
 	eng, caster, target := createTestEngine()
 
 	// 先给目标施加一个受伤打断的光环
-	auraInfo := &spell.SpellInfo{
+	auraInfo := &spellcore.SpellInfo{
 		ID:       200,
 		Name:     "TestBreakOnDamage",
 		Duration: 5000,
-		Effects: []spell.SpellEffectInfo{
+		Effects: []spellcore.SpellEffectInfo{
 			{
-				EffectType:         spell.EffectApplyAura,
-				AuraType:           uint16(aura.AuraModStat),
+				EffectType:         spellcore.EffectApplyAura,
+				AuraType:           uint16(spellcore.AuraModStat),
 				AuraPeriod:         0,
-				AuraInterruptFlags: spell.AuraInterruptOnDamage,
-				TargetA:            spell.TargetUnitTargetEnemy,
+				AuraInterruptFlags: spellcore.AuraInterruptOnDamage,
+				TargetA:            spellcore.TargetUnitTargetEnemy,
 			},
 		},
 	}
@@ -158,17 +157,17 @@ func TestSettlement_PeriodicDamageReducesHealth(t *testing.T) {
 	eng, caster, target := createTestEngine()
 
 	// 施加 DoT 光环
-	dotInfo := &spell.SpellInfo{
+	dotInfo := &spellcore.SpellInfo{
 		ID:       300,
 		Name:     "TestDoT",
 		Duration: 5000,
-		Effects: []spell.SpellEffectInfo{
+		Effects: []spellcore.SpellEffectInfo{
 			{
-				EffectType: spell.EffectApplyAura,
-				AuraType:   uint16(aura.AuraPeriodicDamage),
+				EffectType: spellcore.EffectApplyAura,
+				AuraType:   uint16(spellcore.AuraPeriodicDamage),
 				BasePoints: 50,
 				AuraPeriod: 500,
-				TargetA:    spell.TargetUnitTargetEnemy,
+				TargetA:    spellcore.TargetUnitTargetEnemy,
 			},
 		},
 	}
@@ -190,17 +189,17 @@ func TestSettlement_PeriodicHealIncreasesHealth(t *testing.T) {
 	caster.Stats.SetBase(stat.Health, 500)
 
 	// 施加 HoT 光环（治疗自己）
-	hotInfo := &spell.SpellInfo{
+	hotInfo := &spellcore.SpellInfo{
 		ID:       301,
 		Name:     "TestHoT",
 		Duration: 5000,
-		Effects: []spell.SpellEffectInfo{
+		Effects: []spellcore.SpellEffectInfo{
 			{
-				EffectType: spell.EffectApplyAura,
-				AuraType:   uint16(aura.AuraPeriodicHeal),
+				EffectType: spellcore.EffectApplyAura,
+				AuraType:   uint16(spellcore.AuraPeriodicHeal),
 				BasePoints: 50,
 				AuraPeriod: 500,
-				TargetA:    spell.TargetUnitCaster,
+				TargetA:    spellcore.TargetUnitCaster,
 			},
 		},
 	}

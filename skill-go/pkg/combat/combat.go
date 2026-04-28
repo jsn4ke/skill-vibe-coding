@@ -1,8 +1,7 @@
 package combat
 
 import (
-	"skill-go/pkg/proc"
-	"skill-go/pkg/spell"
+	"skill-go/pkg/spellcore"
 )
 
 // HitResult 表示命中判定的结果类型。
@@ -32,39 +31,39 @@ type SettlementContext struct {
 }
 
 // BuildProcEvent 从结算上下文构建攻击者侧 Proc 事件，对齐 TC 的 ProcSkillsAndAuras。
-func BuildProcEvent(ctx SettlementContext) proc.ProcEvent {
-	var flag proc.ProcFlag
-	var typeMask proc.SpellTypeMask
+func BuildProcEvent(ctx SettlementContext) spellcore.ProcEvent {
+	var flag spellcore.ProcFlag
+	var typeMask spellcore.SpellTypeMask
 
 	if ctx.Damage > 0 {
 		if ctx.IsPeriodic {
-			flag = proc.FlagPeriodicDamageDealt
+			flag = spellcore.FlagPeriodicDamageDealt
 		} else {
-			flag = proc.FlagSpellDamageDealt
+			flag = spellcore.FlagSpellDamageDealt
 		}
-		typeMask = proc.TypeMaskDamage
+		typeMask = spellcore.TypeMaskDamage
 	} else if ctx.Healing > 0 {
 		if ctx.IsPeriodic {
-			flag = proc.FlagPeriodicHealDealt
+			flag = spellcore.FlagPeriodicHealDealt
 		} else {
-			flag = proc.FlagSpellHealDealt
+			flag = spellcore.FlagSpellHealDealt
 		}
-		typeMask = proc.TypeMaskHeal
+		typeMask = spellcore.TypeMaskHeal
 	} else {
-		flag = proc.FlagSpellHit
-		typeMask = proc.TypeMaskNonDmgHeal
+		flag = spellcore.FlagSpellHit
+		typeMask = spellcore.TypeMaskNonDmgHeal
 	}
 
-	hitMask := proc.HitNormal
+	hitMask := spellcore.ProcHitNormal
 	if ctx.IsCrit {
-		hitMask |= proc.HitCrit
+		hitMask |= spellcore.ProcHitCrit
 	}
 
-	return proc.ProcEvent{
+	return spellcore.ProcEvent{
 		Flag:      flag,
-		SpellID:   spell.SpellID(ctx.SpellID),
+		SpellID:   spellcore.SpellID(ctx.SpellID),
 		TypeMask:  typeMask,
-		PhaseMask: proc.PhaseHit,
+		PhaseMask: spellcore.PhaseHit,
 		HitMask:   hitMask,
 		SourceID:  ctx.SourceID,
 		TargetID:  ctx.TargetID,
@@ -74,39 +73,39 @@ func BuildProcEvent(ctx SettlementContext) proc.ProcEvent {
 }
 
 // BuildVictimProcEvent 从结算上下文构建受击者侧 Proc 事件。
-func BuildVictimProcEvent(ctx SettlementContext) proc.ProcEvent {
-	var flag proc.ProcFlag
-	var typeMask proc.SpellTypeMask
+func BuildVictimProcEvent(ctx SettlementContext) spellcore.ProcEvent {
+	var flag spellcore.ProcFlag
+	var typeMask spellcore.SpellTypeMask
 
 	if ctx.Damage > 0 {
 		if ctx.IsPeriodic {
-			flag = proc.FlagPeriodicDamageTaken
+			flag = spellcore.FlagPeriodicDamageTaken
 		} else {
-			flag = proc.FlagSpellDamageTaken
+			flag = spellcore.FlagSpellDamageTaken
 		}
-		typeMask = proc.TypeMaskDamage
+		typeMask = spellcore.TypeMaskDamage
 	} else if ctx.Healing > 0 {
 		if ctx.IsPeriodic {
-			flag = proc.FlagPeriodicHealTaken
+			flag = spellcore.FlagPeriodicHealTaken
 		} else {
-			flag = proc.FlagSpellHealTaken
+			flag = spellcore.FlagSpellHealTaken
 		}
-		typeMask = proc.TypeMaskHeal
+		typeMask = spellcore.TypeMaskHeal
 	} else {
-		flag = proc.FlagSpellHit
-		typeMask = proc.TypeMaskNonDmgHeal
+		flag = spellcore.FlagSpellHit
+		typeMask = spellcore.TypeMaskNonDmgHeal
 	}
 
-	hitMask := proc.HitNormal
+	hitMask := spellcore.ProcHitNormal
 	if ctx.IsCrit {
-		hitMask |= proc.HitCrit
+		hitMask |= spellcore.ProcHitCrit
 	}
 
-	return proc.ProcEvent{
+	return spellcore.ProcEvent{
 		Flag:      flag,
-		SpellID:   spell.SpellID(ctx.SpellID),
+		SpellID:   spellcore.SpellID(ctx.SpellID),
 		TypeMask:  typeMask,
-		PhaseMask: proc.PhaseHit,
+		PhaseMask: spellcore.PhaseHit,
 		HitMask:   hitMask,
 		SourceID:  ctx.SourceID,
 		TargetID:  ctx.TargetID,

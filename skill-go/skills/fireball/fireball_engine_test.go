@@ -7,7 +7,7 @@ import (
 
 	"skill-go/pkg/engine"
 	"skill-go/pkg/entity"
-	"skill-go/pkg/spell"
+	"skill-go/pkg/spellcore"
 	"skill-go/pkg/stat"
 )
 
@@ -44,10 +44,10 @@ func TestFireball_EngineSpellInfoFields(t *testing.T) {
 	if len(Info.Effects) != 2 {
 		t.Fatalf("expected 2 effects, got %d", len(Info.Effects))
 	}
-	if Info.Effects[0].EffectType != spell.EffectSchoolDamage {
+	if Info.Effects[0].EffectType != spellcore.EffectSchoolDamage {
 		t.Errorf("expected EffectSchoolDamage for effect 0")
 	}
-	if Info.Effects[1].EffectType != spell.EffectApplyAura {
+	if Info.Effects[1].EffectType != spellcore.EffectApplyAura {
 		t.Errorf("expected EffectApplyAura for effect 1")
 	}
 }
@@ -130,7 +130,7 @@ func TestFireball_EngineAuraProperties(t *testing.T) {
 
 	a := caster.GetOwnedAuras()[0]
 	// Verify aura properties
-	if a.SpellID != spell.SpellID(Info.ID) {
+	if a.SpellID != spellcore.SpellID(Info.ID) {
 		t.Errorf("expected SpellID=%d, got %d", Info.ID, a.SpellID)
 	}
 	if a.Duration != 8*time.Second {
@@ -161,7 +161,7 @@ func TestFireball_EngineMovementCancels(t *testing.T) {
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
-	if s.State != spell.StatePreparing {
+	if s.State != spellcore.StatePreparing {
 		t.Fatalf("expected StatePreparing, got %v", s.State)
 	}
 
@@ -173,10 +173,10 @@ func TestFireball_EngineMovementCancels(t *testing.T) {
 	eng.Advance(100) // movement detected, isMoving=true
 	eng.Advance(100) // spell sees isMoving=true, cancels
 
-	if s.State != spell.StateFinished {
+	if s.State != spellcore.StateFinished {
 		t.Errorf("expected StateFinished after movement, got %v", s.State)
 	}
-	if s.Result != spell.CastFailedInterrupted {
+	if s.Result != spellcore.CastFailedInterrupted {
 		t.Errorf("expected CastFailedInterrupted, got %v", s.Result)
 	}
 }
@@ -189,7 +189,7 @@ func TestFireball_EngineOutOfRangeCancels(t *testing.T) {
 	target := eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
-	if s.State != spell.StatePreparing {
+	if s.State != spellcore.StatePreparing {
 		t.Fatalf("expected StatePreparing, got %v", s.State)
 	}
 
@@ -200,10 +200,10 @@ func TestFireball_EngineOutOfRangeCancels(t *testing.T) {
 	target.SetPosition(entity.Position{X: 50, Y: 0, Z: 0})
 	eng.Advance(100)
 
-	if s.State != spell.StateFinished {
+	if s.State != spellcore.StateFinished {
 		t.Errorf("expected StateFinished after target OOR, got %v", s.State)
 	}
-	if s.Result != spell.CastFailedInterrupted {
+	if s.Result != spellcore.CastFailedInterrupted {
 		t.Errorf("expected CastFailedInterrupted, got %v", s.Result)
 	}
 }
@@ -224,10 +224,10 @@ func TestFireball_EngineTargetRemovedCancels(t *testing.T) {
 	eng.RemoveUnit(2)
 	eng.Advance(100)
 
-	if s.State != spell.StateFinished {
+	if s.State != spellcore.StateFinished {
 		t.Errorf("expected StateFinished after target removed, got %v", s.State)
 	}
-	if s.Result != spell.CastFailedInterrupted {
+	if s.Result != spellcore.CastFailedInterrupted {
 		t.Errorf("expected CastFailedInterrupted, got %v", s.Result)
 	}
 }

@@ -1,7 +1,6 @@
-package script
+package spellcore
 
 import (
-	"skill-go/pkg/spell"
 	"skill-go/pkg/targeting"
 )
 
@@ -23,7 +22,7 @@ const (
 	HookAfterHit
 	HookOnSpellLaunch
 	HookOnSpellCancel
-	HookOnTargetSelect // 目标选择完成后、AddTarget 前调用
+	HookOnTargetSelect
 )
 
 // AuraHook 表示光环脚本钩子的类型。
@@ -41,11 +40,10 @@ const (
 
 // SpellContext 是法术脚本钩子的执行上下文。
 type SpellContext struct {
-	Spell          *spell.Spell
+	Spell          *Spell
 	PreventDefault bool
 	EffectIndex    uint8
-	// TargetUnits 是 HookOnTargetSelect 时已选中的目标列表，脚本可修改此切片干预目标选择
-	TargetUnits []targeting.TargetUnit
+	TargetUnits    []targeting.TargetUnit
 }
 
 // HandlerFunc 是法术脚本钩子的处理函数类型。
@@ -53,7 +51,7 @@ type HandlerFunc func(ctx *SpellContext)
 
 // AuraContext 是光环脚本钩子的执行上下文。
 type AuraContext struct {
-	SpellID        spell.SpellID
+	SpellID        SpellID
 	TargetID       uint64
 	CasterID       uint64
 	StackAmount    uint8
@@ -61,30 +59,28 @@ type AuraContext struct {
 	Amount         float64
 	PreventDefault bool
 	RemoveMode     uint8
-	Aura           interface{}
+	Aura           *Aura
 }
 
 // AuraHandlerFunc 是光环脚本钩子的处理函数类型。
 type AuraHandlerFunc func(ctx *AuraContext)
 
 // Registry 是脚本注册中心，按 SpellID 精确匹配法术和光环钩子。
-// 技能通过 RegisterSpellHook/RegisterAuraHook 注册脚本，
-// 引擎通过 CallSpellHook/CallAuraHook 调用钩子。
 type Registry struct {
-	spellHooks map[spell.SpellID]map[Hook][]HandlerFunc
-	auraHooks  map[spell.SpellID]map[AuraHook][]AuraHandlerFunc
+	spellHooks map[SpellID]map[Hook][]HandlerFunc
+	auraHooks  map[SpellID]map[AuraHook][]AuraHandlerFunc
 }
 
 // NewRegistry 创建一个空的脚本注册中心。
 func NewRegistry() *Registry {
 	return &Registry{
-		spellHooks: make(map[spell.SpellID]map[Hook][]HandlerFunc),
-		auraHooks:  make(map[spell.SpellID]map[AuraHook][]AuraHandlerFunc),
+		spellHooks: make(map[SpellID]map[Hook][]HandlerFunc),
+		auraHooks:  make(map[SpellID]map[AuraHook][]AuraHandlerFunc),
 	}
 }
 
 // RegisterSpellHook 为指定法术注册法术脚本钩子。
-func (r *Registry) RegisterSpellHook(spellID spell.SpellID, hook Hook, fn HandlerFunc) {
+func (r *Registry) RegisterSpellHook(spellID SpellID, hook Hook, fn HandlerFunc) {
 	if r.spellHooks[spellID] == nil {
 		r.spellHooks[spellID] = make(map[Hook][]HandlerFunc)
 	}
@@ -92,15 +88,15 @@ func (r *Registry) RegisterSpellHook(spellID spell.SpellID, hook Hook, fn Handle
 }
 
 // RegisterAuraHook 为指定法术注册光环脚本钩子。
-func (r *Registry) RegisterAuraHook(spellID spell.SpellID, hook AuraHook, fn AuraHandlerFunc) {
+func (r *Registry) RegisterAuraHook(spellID SpellID, hook AuraHook, fn AuraHandlerFunc) {
 	if r.auraHooks[spellID] == nil {
 		r.auraHooks[spellID] = make(map[AuraHook][]AuraHandlerFunc)
 	}
 	r.auraHooks[spellID][hook] = append(r.auraHooks[spellID][hook], fn)
 }
 
-// CallSpellHook 调用指定法术的脚本钩子。任一处理函数设置 PreventDefault 则停止后续调用。
-func (r *Registry) CallSpellHook(spellID spell.SpellID, hook Hook, ctx *SpellContext) {
+// CallSpellHook 调用指定法术的脚本钩子。
+func (r *Registry) CallSpellHook(spellID SpellID, hook Hook, ctx *SpellContext) {
 	hooks, ok := r.spellHooks[spellID]
 	if !ok {
 		return
@@ -117,8 +113,8 @@ func (r *Registry) CallSpellHook(spellID spell.SpellID, hook Hook, ctx *SpellCon
 	}
 }
 
-// CallAuraHook 调用指定法术的光环脚本钩子。任一处理函数设置 PreventDefault 则停止后续调用。
-func (r *Registry) CallAuraHook(spellID spell.SpellID, hook AuraHook, ctx *AuraContext) {
+// CallAuraHook 调用指定法术的光环脚本钩子。
+func (r *Registry) CallAuraHook(spellID SpellID, hook AuraHook, ctx *AuraContext) {
 	hooks, ok := r.auraHooks[spellID]
 	if !ok {
 		return
@@ -136,7 +132,7 @@ func (r *Registry) CallAuraHook(spellID spell.SpellID, hook AuraHook, ctx *AuraC
 }
 
 // HasSpellHook 检查指定法术是否注册了指定类型的脚本钩子。
-func (r *Registry) HasSpellHook(spellID spell.SpellID, hook Hook) bool {
+func (r *Registry) HasSpellHook(spellID SpellID, hook Hook) bool {
 	hooks, ok := r.spellHooks[spellID]
 	if !ok {
 		return false
@@ -146,7 +142,7 @@ func (r *Registry) HasSpellHook(spellID spell.SpellID, hook Hook) bool {
 }
 
 // HasAuraHook 检查指定法术是否注册了指定类型的光环脚本钩子。
-func (r *Registry) HasAuraHook(spellID spell.SpellID, hook AuraHook) bool {
+func (r *Registry) HasAuraHook(spellID SpellID, hook AuraHook) bool {
 	hooks, ok := r.auraHooks[spellID]
 	if !ok {
 		return false
@@ -156,7 +152,7 @@ func (r *Registry) HasAuraHook(spellID spell.SpellID, hook AuraHook) bool {
 }
 
 // UnregisterAll 移除指定法术的所有脚本和光环钩子。
-func (r *Registry) UnregisterAll(spellID spell.SpellID) {
+func (r *Registry) UnregisterAll(spellID SpellID) {
 	delete(r.spellHooks, spellID)
 	delete(r.auraHooks, spellID)
 }

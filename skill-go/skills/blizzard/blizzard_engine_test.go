@@ -6,7 +6,7 @@ import (
 
 	"skill-go/pkg/engine"
 	"skill-go/pkg/entity"
-	"skill-go/pkg/spell"
+	"skill-go/pkg/spellcore"
 	"skill-go/pkg/stat"
 )
 
@@ -125,7 +125,7 @@ func TestBlizzard_EngineChannelCancel(t *testing.T) {
 
 	s := eng.CastSpell(caster, &Info, engine.WithDestPos(10, 0, 0))
 
-	if s.State != spell.StateChanneling {
+	if s.State != spellcore.StateChanneling {
 		t.Fatalf("expected StateChanneling, got %v", s.State)
 	}
 	if len(caster.GetOwnedAuras()) == 0 {
@@ -135,7 +135,7 @@ func TestBlizzard_EngineChannelCancel(t *testing.T) {
 	// Cancel the channel
 	s.Cancel()
 
-	if s.State != spell.StateFinished {
+	if s.State != spellcore.StateFinished {
 		t.Errorf("expected StateFinished after cancel, got %v", s.State)
 	}
 	if len(caster.GetOwnedAuras()) != 0 {
@@ -161,7 +161,7 @@ func TestBlizzard_EngineMovementCancelsChannel(t *testing.T) {
 
 	s := eng.CastSpell(caster, &Info, engine.WithDestPos(10, 0, 0))
 
-	if s.State != spell.StateChanneling {
+	if s.State != spellcore.StateChanneling {
 		t.Fatalf("expected StateChanneling, got %v", s.State)
 	}
 
@@ -173,10 +173,10 @@ func TestBlizzard_EngineMovementCancelsChannel(t *testing.T) {
 	eng.Advance(100) // movement detected, isMoving=true
 	eng.Advance(100) // spell sees isMoving=true, cancels
 
-	if s.State != spell.StateFinished {
+	if s.State != spellcore.StateFinished {
 		t.Errorf("expected StateFinished after movement, got %v", s.State)
 	}
-	if s.Result != spell.CastFailedInterrupted {
+	if s.Result != spellcore.CastFailedInterrupted {
 		t.Errorf("expected CastFailedInterrupted, got %v", s.Result)
 	}
 	if len(caster.GetOwnedAuras()) != 0 {
@@ -199,7 +199,7 @@ func TestBlizzard_EngineTargetLeavesRange(t *testing.T) {
 	RegisterScripts(eng.Registry(), caster, eng)
 
 	s := eng.CastSpell(caster, &Info, engine.WithDestPos(10, 0, 0))
-	if s.State != spell.StateChanneling {
+	if s.State != spellcore.StateChanneling {
 		t.Fatalf("expected StateChanneling, got %v", s.State)
 	}
 
@@ -217,7 +217,7 @@ func TestBlizzard_EngineTargetLeavesRange(t *testing.T) {
 	eng.Advance(100)
 
 	// Spell should still be channeling (target 3 still in range)
-	if s.State != spell.StateChanneling {
+	if s.State != spellcore.StateChanneling {
 		t.Errorf("expected channel to continue with remaining targets, got state %v", s.State)
 	}
 }

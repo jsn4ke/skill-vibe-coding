@@ -1,32 +1,30 @@
 package livingbomb
 
 import (
-	"skill-go/pkg/aura"
 	"skill-go/pkg/engine"
-	"skill-go/pkg/script"
-	"skill-go/pkg/spell"
+	"skill-go/pkg/spellcore"
 	"skill-go/pkg/unit"
 )
 
 // 法术 44457 — 活体炸弹（施放入口）
-var Info = spell.SpellInfo{
+var Info = spellcore.SpellInfo{
 	ID:        44457,
 	Name:      "Living Bomb",
 	CastTime:  0,
 	RangeMax:  35,
 	PowerCost: 470,
 	PowerType: 0,
-	Effects: []spell.SpellEffectInfo{
+	Effects: []spellcore.SpellEffectInfo{
 		{
 			EffectIndex: 0,
-			EffectType:  spell.EffectDummy,
-			TargetA:     spell.TargetUnitTargetEnemy,
+			EffectType:  spellcore.EffectDummy,
+			TargetA:     spellcore.TargetUnitTargetEnemy,
 		},
 	},
 }
 
 // 法术 217694 — 活体炸弹周期（DoT）
-var PeriodicInfo = spell.SpellInfo{
+var PeriodicInfo = spellcore.SpellInfo{
 	ID:        217694,
 	Name:      "Living Bomb Periodic",
 	CastTime:  0,
@@ -34,44 +32,44 @@ var PeriodicInfo = spell.SpellInfo{
 	RangeMax:  40,
 	PowerCost: 0,
 	PowerType: 0,
-	Effects: []spell.SpellEffectInfo{
+	Effects: []spellcore.SpellEffectInfo{
 		{
 			EffectIndex: 0,
-			EffectType:  spell.EffectApplyAura,
+			EffectType:  spellcore.EffectApplyAura,
 			BonusCoeff:  0.06,
-			AuraType:    uint16(aura.AuraPeriodicDamage),
+			AuraType:    uint16(spellcore.AuraPeriodicDamage),
 			AuraPeriod:  1000,
-			TargetA:     spell.TargetUnitTargetEnemy,
+			TargetA:     spellcore.TargetUnitTargetEnemy,
 		},
 		{
 			EffectIndex: 1,
-			EffectType:  spell.EffectDummy,
-			TargetA:     spell.TargetUnitTargetEnemy,
+			EffectType:  spellcore.EffectDummy,
+			TargetA:     spellcore.TargetUnitTargetEnemy,
 		},
 	},
 }
 
 // 法术 44461 — 活体炸弹爆炸（AoE）
 // TargetA=TargetUnitSrcAreaEnemy + Radius=10.0：引擎自动在 SrcPos 半径内搜索敌方目标
-var ExplosionInfo = spell.SpellInfo{
+var ExplosionInfo = spellcore.SpellInfo{
 	ID:        44461,
 	Name:      "Living Bomb Explode",
 	CastTime:  0,
 	RangeMax:  50000,
 	PowerCost: 0,
 	PowerType: 0,
-	Effects: []spell.SpellEffectInfo{
+	Effects: []spellcore.SpellEffectInfo{
 		{
 			EffectIndex: 0,
-			EffectType:  spell.EffectDummy,
-			TargetA:     spell.TargetUnitSrcAreaEnemy,
+			EffectType:  spellcore.EffectDummy,
+			TargetA:     spellcore.TargetUnitSrcAreaEnemy,
 			Radius:      10.0,
 		},
 		{
 			EffectIndex: 1,
-			EffectType:  spell.EffectSchoolDamage,
+			EffectType:  spellcore.EffectSchoolDamage,
 			BonusCoeff:  0.14,
-			TargetA:     spell.TargetUnitSrcAreaEnemy,
+			TargetA:     spellcore.TargetUnitSrcAreaEnemy,
 			Radius:      10.0,
 		},
 	},
@@ -80,9 +78,9 @@ var ExplosionInfo = spell.SpellInfo{
 // RegisterScripts 注册所有活体炸弹的脚本钩子。
 // 所有触发法术使用 engine.CastSpell(WithTriggered)。
 // 爆炸法术的 AoE 目标选择由引擎自动解析（TargetA+Radius），无需 WithAoE。
-func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.Engine) {
+func RegisterScripts(registry *spellcore.Registry, caster *unit.Unit, eng *engine.Engine) {
 	// 44457: OnEffectHitTarget — 拦截 Dummy，施放周期法术
-	registry.RegisterSpellHook(44457, script.HookOnEffectHitTarget, func(ctx *script.SpellContext) {
+	registry.RegisterSpellHook(44457, spellcore.HookOnEffectHitTarget, func(ctx *spellcore.SpellContext) {
 		ctx.PreventDefault = true
 		targetID := ctx.Spell.Targets.UnitTargetID
 		eng.CastSpell(caster, &PeriodicInfo,
@@ -93,12 +91,12 @@ func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.E
 	})
 
 	// 217694: AfterRemove — 仅在过期时爆炸
-	registry.RegisterAuraHook(217694, script.AuraHookAfterRemove, func(ctx *script.AuraContext) {
-		if ctx.RemoveMode != uint8(aura.RemoveByExpire) {
+	registry.RegisterAuraHook(217694, spellcore.AuraHookAfterRemove, func(ctx *spellcore.AuraContext) {
+		if ctx.RemoveMode != uint8(spellcore.RemoveByExpire) {
 			return
 		}
-		a, ok := ctx.Aura.(*aura.Aura)
-		if !ok || a == nil {
+		a := ctx.Aura
+		if a == nil {
 			return
 		}
 		canSpread := float64(0)
@@ -109,7 +107,7 @@ func RegisterScripts(registry *script.Registry, caster *unit.Unit, eng *engine.E
 	})
 
 	// 44461: OnEffectHitTarget EFFECT_1 — SchoolDamage 后传播到命中目标
-	registry.RegisterSpellHook(44461, script.HookOnEffectHitTarget, func(ctx *script.SpellContext) {
+	registry.RegisterSpellHook(44461, spellcore.HookOnEffectHitTarget, func(ctx *spellcore.SpellContext) {
 		if ctx.EffectIndex != 1 {
 			return
 		}

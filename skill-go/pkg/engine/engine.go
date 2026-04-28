@@ -3,15 +3,10 @@ package engine
 import (
 	"fmt"
 	"math"
-	"skill-go/pkg/aura"
 	"skill-go/pkg/combat"
-	"skill-go/pkg/cooldown"
-	"skill-go/pkg/effect"
 	"skill-go/pkg/entity"
 	"skill-go/pkg/event"
-	"skill-go/pkg/proc"
-	"skill-go/pkg/script"
-	"skill-go/pkg/spell"
+	"skill-go/pkg/spellcore"
 	"skill-go/pkg/stat"
 	"skill-go/pkg/targeting"
 	"skill-go/pkg/timeline"
@@ -26,9 +21,9 @@ import (
 type Engine struct {
 	units    map[uint64]*unit.Unit
 	bus      *event.Bus
-	registry *script.Registry
-	auraMgr  *aura.Manager
-	procMgr  *proc.Manager
+	registry *spellcore.Registry
+	auraMgr  *spellcore.AuraManager
+	procMgr  *spellcore.ProcManager
 	renderer *timeline.TimelineRenderer
 
 	// currentTime 随每次 Tick 累加的模拟时间
@@ -41,12 +36,12 @@ type Engine struct {
 // New 创建一个新的引擎，初始化所有子系统。
 func New() *Engine {
 	bus := event.NewBus()
-	reg := script.NewRegistry()
-	auraMgr := aura.NewManager(bus)
+	reg := spellcore.NewRegistry()
+	auraMgr := spellcore.NewAuraManager(bus)
 	auraMgr.SetRegistry(reg)
 
 	// 将效果管线连接到引擎的脚本注册中心
-	effect.ScriptRegistry = reg
+	spellcore.SetScriptRegistry(reg)
 
 	r := timeline.NewRenderer()
 	r.SubscribeAll(bus)
@@ -56,7 +51,7 @@ func New() *Engine {
 		bus:        bus,
 		registry:   reg,
 		auraMgr:    auraMgr,
-		procMgr:    proc.NewManager(),
+		procMgr:    spellcore.NewProcManager(),
 		renderer:   r,
 		nextUnitID: 1,
 	}
@@ -64,7 +59,7 @@ func New() *Engine {
 
 // AddUnit 创建并注册一个新单位到引擎中。
 func (e *Engine) AddUnit(ent *entity.Entity, stats *stat.StatSet) *unit.Unit {
-	u := unit.NewUnit(ent, stats, cooldown.NewHistory())
+	u := unit.NewUnit(ent, stats, spellcore.NewHistory())
 	u.SetEngine(e)
 	e.units[u.ID()] = u
 	return u
@@ -72,7 +67,7 @@ func (e *Engine) AddUnit(ent *entity.Entity, stats *stat.StatSet) *unit.Unit {
 
 // AddUnitWithID 创建并注册一个指定实体 ID 的单位。
 func (e *Engine) AddUnitWithID(id uint64, ent *entity.Entity, stats *stat.StatSet) *unit.Unit {
-	u := unit.NewUnit(ent, stats, cooldown.NewHistory())
+	u := unit.NewUnit(ent, stats, spellcore.NewHistory())
 	u.SetEngine(e)
 	e.units[id] = u
 	return u
@@ -123,13 +118,13 @@ func (e *Engine) GetSpellPower(casterID uint64) float64 {
 func (e *Engine) Tick() time.Duration { return e.currentTime }
 
 // Registry 返回脚本注册中心。
-func (e *Engine) Registry() *script.Registry { return e.registry }
+func (e *Engine) Registry() *spellcore.Registry { return e.registry }
 
 // AuraMgr 返回光环管理器。
-func (e *Engine) AuraMgr() *aura.Manager { return e.auraMgr }
+func (e *Engine) AuraMgr() *spellcore.AuraManager { return e.auraMgr }
 
 // ProcMgr 返回触发器管理器。
-func (e *Engine) ProcMgr() *proc.Manager { return e.procMgr }
+func (e *Engine) ProcMgr() *spellcore.ProcManager { return e.procMgr }
 
 // Renderer 返回时间线渲染器。
 func (e *Engine) Renderer() *timeline.TimelineRenderer { return e.renderer }
@@ -197,25 +192,24 @@ func WithTriggered() CastOption {
 // 路径 A（触发即时）：同步完成，无需注册。
 // 路径 B（普通即时）：同步完成并注册。
 // 路径 C（延迟）：注册 + 定时器，由 Engine.Advance 驱动。
-func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...CastOption) *spell.Spell {
+func (e *Engine) CastSpell(caster *unit.Unit, info *spellcore.SpellInfo, opts ...CastOption) *spellcore.Spell {
 	cfg := &castConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	flags := spell.TriggeredNone
+	flags := spellcore.TriggeredNone
 	if cfg.triggered {
-		flags = spell.TriggeredFullMask
+		flags = spellcore.TriggeredFullMask
 	}
 
-	s := spell.NewSpell(spell.SpellID(info.ID), info, caster, flags)
+	s := spellcore.NewSpell(spellcore.SpellID(info.ID), info, caster, flags)
 	s.Bus = e.bus
 	s.Engine = e                                    // 连接引擎引用，用于打断检查
 	s.DoDamageAndTriggersFn = e.doDamageAndTriggers // 连接伤害结算
 
 	// 连接 OnAuraCreated，使效果管线能自动注册光环
-	s.OnAuraCreated = func(a interface{}) {
-		aura := a.(*aura.Aura)
+	s.OnAuraCreated = func(aura *spellcore.Aura) {
 		owner := e.GetUnit(aura.CasterID)
 		target := e.GetUnit(aura.TargetID)
 		if owner != nil && target != nil {
@@ -238,7 +232,7 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 
 	// Prepare 验证并设置状态
 	result := s.Prepare()
-	if result != spell.CastOK {
+	if result != spellcore.CastOK {
 		fmt.Printf("[engine] CastSpell %s failed: %v\n", info.Name, result)
 		return s
 	}
@@ -263,10 +257,10 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 var _ unit.EngineRef = (*Engine)(nil)
 
 // ScriptRegistry 返回脚本注册中心，满足 unit.EngineRef 接口。
-func (e *Engine) ScriptRegistry() *script.Registry { return e.registry }
+func (e *Engine) ScriptRegistry() *spellcore.Registry { return e.registry }
 
-// GetCasterUnit 按 ID 获取施法者单位，满足 spell.SpellEngineRef 接口。
-func (e *Engine) GetCasterUnit(id uint64) spell.CasterUnit {
+// GetCasterUnit 按 ID 获取施法者单位，满足 spellcore.SpellEngineRef 接口。
+func (e *Engine) GetCasterUnit(id uint64) spellcore.CasterUnit {
 	u := e.units[id]
 	if u == nil {
 		return nil
@@ -274,7 +268,7 @@ func (e *Engine) GetCasterUnit(id uint64) spell.CasterUnit {
 	return u
 }
 
-// GetTargetUnit 按 ID 获取单位作为 TargetUnit，满足 spell.SpellEngineRef 接口。
+// GetTargetUnit 按 ID 获取单位作为 TargetUnit，满足 spellcore.SpellEngineRef 接口。
 func (e *Engine) GetTargetUnit(id uint64) targeting.TargetUnit {
 	u := e.units[id]
 	if u == nil {
@@ -283,7 +277,7 @@ func (e *Engine) GetTargetUnit(id uint64) targeting.TargetUnit {
 	return &unitTargetAdapter{unit: u}
 }
 
-// GetTargetUnitsInRadius 获取指定半径内的所有单位作为 TargetUnit，满足 spell.SpellEngineRef 接口。
+// GetTargetUnitsInRadius 获取指定半径内的所有单位作为 TargetUnit，满足 spellcore.SpellEngineRef 接口。
 func (e *Engine) GetTargetUnitsInRadius(center [3]float64, radius float64, excludeID uint64) []targeting.TargetUnit {
 	units := e.GetUnitsInRadius(center, radius, excludeID)
 	result := make([]targeting.TargetUnit, len(units))
@@ -316,29 +310,29 @@ func (a *entityPosAdapter) GetY() float64      { return a.pos.Y }
 func (a *entityPosAdapter) GetZ() float64      { return a.pos.Z }
 func (a *entityPosAdapter) GetFacing() float64 { return a.pos.Facing }
 
-func (e *Engine) AuraRemover() spell.AuraRemover {
+func (e *Engine) AuraRemover() spellcore.AuraRemover {
 	return &auraRemover{engine: e}
 }
 
-func (e *Engine) CallLaunchHook(spellID spell.SpellID, s *spell.Spell) {
-	e.registry.CallSpellHook(spellID, script.HookOnSpellLaunch, &script.SpellContext{Spell: s})
+func (e *Engine) CallLaunchHook(spellID spellcore.SpellID, s *spellcore.Spell) {
+	e.registry.CallSpellHook(spellID, spellcore.HookOnSpellLaunch, &spellcore.SpellContext{Spell: s})
 }
 
-func (e *Engine) CallCancelHook(spellID spell.SpellID, s *spell.Spell) {
-	e.registry.CallSpellHook(spellID, script.HookOnSpellCancel, &script.SpellContext{Spell: s})
+func (e *Engine) CallCancelHook(spellID spellcore.SpellID, s *spellcore.Spell) {
+	e.registry.CallSpellHook(spellID, spellcore.HookOnSpellCancel, &spellcore.SpellContext{Spell: s})
 }
 
 // CallTargetSelectHook
-func (e *Engine) CallTargetSelectHook(spellID spell.SpellID, s *spell.Spell, units []targeting.TargetUnit) {
-	e.registry.CallSpellHook(spellID, script.HookOnTargetSelect, &script.SpellContext{Spell: s, TargetUnits: units})
+func (e *Engine) CallTargetSelectHook(spellID spellcore.SpellID, s *spellcore.Spell, units []targeting.TargetUnit) {
+	e.registry.CallSpellHook(spellID, spellcore.HookOnTargetSelect, &spellcore.SpellContext{Spell: s, TargetUnits: units})
 }
 
-// auraRemover 将引擎适配为 spell.AuraRemover，用于引导法术的光环清理。
+// auraRemover 将引擎适配为 spellcore.AuraRemover，用于引导法术的光环清理。
 type auraRemover struct {
 	engine *Engine
 }
 
-func (r *auraRemover) RemoveAuraFromChannel(ownerID uint64, targetID uint64, spellID spell.SpellID) {
+func (r *auraRemover) RemoveAuraFromChannel(ownerID uint64, targetID uint64, spellID spellcore.SpellID) {
 	owner := r.engine.GetUnit(ownerID)
 	target := r.engine.GetUnit(targetID)
 	if owner == nil || target == nil {
@@ -346,7 +340,7 @@ func (r *auraRemover) RemoveAuraFromChannel(ownerID uint64, targetID uint64, spe
 	}
 	for _, a := range owner.GetOwnedAuras() {
 		if a.SpellID == spellID && a.TargetID == targetID {
-			r.engine.auraMgr.RemoveAuraFromHosts(a, owner, target, aura.RemoveByCancel)
+			r.engine.auraMgr.RemoveAuraFromHosts(a, owner, target, spellcore.RemoveByCancel)
 			return
 		}
 	}
@@ -354,13 +348,13 @@ func (r *auraRemover) RemoveAuraFromChannel(ownerID uint64, targetID uint64, spe
 
 // RemoveOwnedAurasBySpellID 移除施法者拥有的所有匹配 SpellID 的光环。
 // 用于 Cancel() 清理引导法术光环，不依赖 TargetInfos。
-func (e *Engine) RemoveOwnedAurasBySpellID(casterID uint64, spellID spell.SpellID) {
+func (e *Engine) RemoveOwnedAurasBySpellID(casterID uint64, spellID spellcore.SpellID) {
 	caster := e.GetUnit(casterID)
 	if caster == nil {
 		return
 	}
 	// 先收集匹配的光环（避免遍历中修改）
-	var toRemove []*aura.Aura
+	var toRemove []*spellcore.Aura
 	for _, a := range caster.GetOwnedAuras() {
 		if a.SpellID == spellID {
 			toRemove = append(toRemove, a)
@@ -371,12 +365,12 @@ func (e *Engine) RemoveOwnedAurasBySpellID(casterID uint64, spellID spell.SpellI
 		if target == nil {
 			target = caster // area aura fallback
 		}
-		e.auraMgr.RemoveAuraFromHosts(a, caster, target, aura.RemoveByCancel)
+		e.auraMgr.RemoveAuraFromHosts(a, caster, target, spellcore.RemoveByCancel)
 	}
 }
 
 // doDamageAndTriggers 执行法术的伤害/治疗结算，对齐 TC 的 DoDamageAndTriggers。
-func (e *Engine) doDamageAndTriggers(s *spell.Spell) {
+func (e *Engine) doDamageAndTriggers(s *spellcore.Spell) {
 	for i := range s.TargetInfos {
 		ti := &s.TargetInfos[i]
 		if ti.Damage == 0 && ti.Healing == 0 {
@@ -409,7 +403,7 @@ func (e *Engine) settleOneTarget(ctx combat.SettlementContext) {
 
 		// 受伤打断光环，对齐 TC 的 RemoveAurasWithInterruptFlags(Damage)
 		if actualDelta < 0 {
-			target.RemoveAurasWithInterruptFlags(spell.AuraInterruptOnDamage)
+			target.RemoveAurasWithInterruptFlags(spellcore.AuraInterruptOnDamage)
 		}
 
 		// 发布伤害事件

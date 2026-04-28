@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"skill-go/pkg/aura"
 	"skill-go/pkg/engine"
 	"skill-go/pkg/entity"
+	"skill-go/pkg/spellcore"
 	"skill-go/pkg/stat"
 )
 
@@ -141,7 +141,7 @@ func TestLivingBomb_EngineNoExplosionOnDispel(t *testing.T) {
 	}
 	a := caster.GetOwnedAuras()[0]
 	target := eng.GetUnit(a.TargetID)
-	eng.AuraMgr().RemoveAuraFromHosts(a, caster, target, aura.RemoveByDispel)
+	eng.AuraMgr().RemoveAuraFromHosts(a, caster, target, spellcore.RemoveByDispel)
 
 	output := eng.Renderer().Render()
 	if strings.Contains(output, "Living Bomb Explode") {
@@ -168,7 +168,7 @@ func TestLivingBomb_EngineNoExplosionOnDeath(t *testing.T) {
 	}
 	a := caster.GetOwnedAuras()[0]
 	target := eng.GetUnit(a.TargetID)
-	eng.AuraMgr().RemoveAuraFromHosts(a, caster, target, aura.RemoveByDeath)
+	eng.AuraMgr().RemoveAuraFromHosts(a, caster, target, spellcore.RemoveByDeath)
 
 	output := eng.Renderer().Render()
 	if strings.Contains(output, "Living Bomb Explode") {

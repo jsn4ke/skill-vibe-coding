@@ -1,4 +1,4 @@
-package spell
+package spellcore
 
 import "skill-go/pkg/targeting"
 

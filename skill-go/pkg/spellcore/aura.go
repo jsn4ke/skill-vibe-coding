@@ -1,10 +1,8 @@
-package aura
+package spellcore
 
 import (
 	"fmt"
 	"skill-go/pkg/event"
-	"skill-go/pkg/script"
-	"skill-go/pkg/spell"
 	"time"
 )
 
@@ -19,7 +17,7 @@ type AuraHost interface {
 	AddAppliedAura(a *Aura)
 	RemoveAppliedAura(idx int)
 	GetAppliedAuras() []*Aura
-	FindAppliedAura(spellID spell.SpellID, casterID uint64) *Aura
+	FindAppliedAura(spellID SpellID, casterID uint64) *Aura
 }
 
 // AuraType 表示光环类型的枚举。
@@ -82,7 +80,7 @@ const (
 // Aura 表示一个光环实例。
 type Aura struct {
 	ID             uint64
-	SpellID        spell.SpellID
+	SpellID        SpellID
 	CasterID       uint64
 	TargetID       uint64
 	AuraType       AuraType
@@ -102,7 +100,7 @@ type Aura struct {
 	AreaCenter     [3]float64
 	AreaRadius     float64
 	SpellValues    map[uint8]float64
-	InterruptFlags spell.SpellAuraInterruptFlags
+	InterruptFlags SpellAuraInterruptFlags
 }
 
 // AuraEffect 表示光环的周期效果。
@@ -115,7 +113,7 @@ type AuraEffect struct {
 	PeriodTimer    time.Duration
 	TicksDone      uint32
 	MiscValue      int32
-	TriggerSpellID spell.SpellID
+	TriggerSpellID SpellID
 }
 
 // AuraApplication 表示光环的应用记录。
@@ -127,7 +125,7 @@ type AuraApplication struct {
 }
 
 // NewAura 创建一个新的光环。
-func NewAura(spellID spell.SpellID, casterID, targetID uint64, auraType AuraType, duration time.Duration) *Aura {
+func NewAura(spellID SpellID, casterID, targetID uint64, auraType AuraType, duration time.Duration) *Aura {
 	return &Aura{
 		SpellID:     spellID,
 		CasterID:    casterID,
@@ -249,27 +247,27 @@ func (a *Aura) TickArea(elapsed time.Duration, casterSpellPower float64, bus *ev
 	}
 }
 
-// Manager 管理光环生命周期，提供 Unit 级别的 ApplyAura/RemoveAuraFromHosts。
-type Manager struct {
+// AuraManager 管理光环生命周期，提供 Unit 级别的 ApplyAura/RemoveAuraFromHosts。
+type AuraManager struct {
 	nextID   uint64
 	bus      *event.Bus
-	registry *script.Registry
+	registry *Registry
 }
 
-// NewManager 创建一个新的光环管理器。
-func NewManager(bus *event.Bus) *Manager {
-	return &Manager{
+// NewAuraManager 创建一个新的光环管理器。
+func NewAuraManager(bus *event.Bus) *AuraManager {
+	return &AuraManager{
 		bus: bus,
 	}
 }
 
 // SetRegistry 设置脚本注册中心。
-func (m *Manager) SetRegistry(reg *script.Registry) {
+func (m *AuraManager) SetRegistry(reg *Registry) {
 	m.registry = reg
 }
 
 // NextID 分配下一个光环 ID。
-func (m *Manager) NextID() uint64 {
+func (m *AuraManager) NextID() uint64 {
 	id := m.nextID
 	m.nextID++
 	return id
@@ -279,7 +277,7 @@ func (m *Manager) NextID() uint64 {
 
 // ApplyAura 在拥有者和目标两端注册光环。这是光环应用的主入口。
 // 光环被添加到 owner.ownedAuras 和 target.appliedAuras。
-func (m *Manager) ApplyAura(owner, target AuraHost, a *Aura) {
+func (m *AuraManager) ApplyAura(owner, target AuraHost, a *Aura) {
 	a.ID = m.NextID()
 
 	// Check for existing aura on target (stack/refresh/replace logic)
@@ -305,7 +303,7 @@ func (m *Manager) ApplyAura(owner, target AuraHost, a *Aura) {
 
 	// 脚本钩子
 	if m.registry != nil {
-		m.registry.CallAuraHook(a.SpellID, script.AuraHookAfterApply, &script.AuraContext{
+		m.registry.CallAuraHook(a.SpellID, AuraHookAfterApply, &AuraContext{
 			SpellID:  a.SpellID,
 			TargetID: a.TargetID,
 			CasterID: a.CasterID,
@@ -326,10 +324,10 @@ func (m *Manager) ApplyAura(owner, target AuraHost, a *Aura) {
 }
 
 // RemoveAuraFromHosts 从拥有者和目标两端移除光环。
-func (m *Manager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode RemoveMode) {
+func (m *AuraManager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode RemoveMode) {
 	// 脚本钩子
 	if m.registry != nil {
-		m.registry.CallAuraHook(a.SpellID, script.AuraHookAfterRemove, &script.AuraContext{
+		m.registry.CallAuraHook(a.SpellID, AuraHookAfterRemove, &AuraContext{
 			SpellID:    a.SpellID,
 			TargetID:   a.TargetID,
 			CasterID:   a.CasterID,
