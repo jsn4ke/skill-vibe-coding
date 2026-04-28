@@ -39,28 +39,28 @@ type SelectionCategory uint8
 
 const (
 	SelectNYI     SelectionCategory = iota // 未实现
-	SelectDefault                           // 直接引用（caster/target/dest），不做空间搜索
-	SelectChannel                           // 从当前 channel spell 取目标
-	SelectNearby                            // 空间搜索：找最近的一个目标
-	SelectCone                              // 空间搜索：扇形范围内所有目标
-	SelectArea                              // 空间搜索：球形范围内所有目标
-	SelectTraj                              // 抛物线碰撞（暂不实现）
-	SelectLine                              // 空间搜索：线形范围内所有目标
+	SelectDefault                          // 直接引用（caster/target/dest），不做空间搜索
+	SelectChannel                          // 从当前 channel spell 取目标
+	SelectNearby                           // 空间搜索：找最近的一个目标
+	SelectCone                             // 空间搜索：扇形范围内所有目标
+	SelectArea                             // 空间搜索：球形范围内所有目标
+	SelectTraj                             // 抛物线碰撞（暂不实现）
+	SelectLine                             // 空间搜索：线形范围内所有目标
 )
 
 // CheckTypes 对齐 TC 的 SpellTargetCheckTypes，控制友敌过滤条件。
 type CheckTypes uint8
 
 const (
-	CheckDefault  CheckTypes = iota // 无特殊过滤
-	CheckEnemy                      // 敌方
-	CheckAlly                       // 友方
-	CheckParty                      // 队友（当前 fallback 为 Ally）
-	CheckRaid                       // 团队成员（当前 fallback 为 Ally）
-	CheckRaidClass                  // 同职业团队成员（暂不实现）
-	CheckPassenger                  // 乘客（暂不实现）
-	CheckSummoned                   // 召唤物
-	CheckEntry                      // 按 condition entry 过滤（暂不实现）
+	CheckDefault   CheckTypes = iota // 无特殊过滤
+	CheckEnemy                       // 敌方
+	CheckAlly                        // 友方
+	CheckParty                       // 队友（当前 fallback 为 Ally）
+	CheckRaid                        // 团队成员（当前 fallback 为 Ally）
+	CheckRaidClass                   // 同职业团队成员（暂不实现）
+	CheckPassenger                   // 乘客（暂不实现）
+	CheckSummoned                    // 召唤物
+	CheckEntry                       // 按 condition entry 过滤（暂不实现）
 )
 
 // DirectionTypes 对齐 TC 的 SpellTargetDirectionTypes，控制扇形和位置方向。

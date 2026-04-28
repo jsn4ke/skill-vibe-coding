@@ -13,14 +13,14 @@ import (
 // 效果管线在 Cast() 时自动创建区域光环。
 // 无需 RegisterScripts — 光环创建和取消清理完全自动。
 var Info = spell.SpellInfo{
-	ID:          10,
-	Name:        "Blizzard",
-	CastTime:    0,
-	Duration:    8000,
-	PowerCost:   320,
-	PowerType:   0,
-	RangeMax:    30,
-	IsChanneled: true,
+	ID:             10,
+	Name:           "Blizzard",
+	CastTime:       0,
+	Duration:       8000,
+	PowerCost:      320,
+	PowerType:      0,
+	RangeMax:       30,
+	IsChanneled:    true,
 	Attributes:     spell.AttrChanneled,
 	InterruptFlags: spell.InterruptMovement,
 	Effects: []spell.SpellEffectInfo{

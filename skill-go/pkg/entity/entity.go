@@ -7,10 +7,10 @@ type EntityID uint64
 
 // Position 表示三维空间中的位置，包含朝向信息。
 type Position struct {
-	X       float64
-	Y       float64
-	Z       float64
-	Facing  float64
+	X      float64
+	Y      float64
+	Z      float64
+	Facing float64
 }
 
 // DistanceTo 计算到另一个位置的三维欧几里得距离。
@@ -47,8 +47,8 @@ func (p Position) IsInFront(other Position) bool {
 type UnitState uint32
 
 const (
-	StateNone      UnitState = 0
-	StateAlive     UnitState = 1 << iota
+	StateNone  UnitState = 0
+	StateAlive UnitState = 1 << iota
 	StateDead
 	StateInCombat
 	StateStunned
@@ -89,11 +89,11 @@ const (
 
 // Entity 是游戏世界中的基础实体，包含位置、状态和等级信息。
 type Entity struct {
-	ID       EntityID
-	Type     EntityType
-	Pos      Position
-	State    UnitState
-	Level    uint32
+	ID    EntityID
+	Type  EntityType
+	Pos   Position
+	State UnitState
+	Level uint32
 }
 
 // NewEntity 创建一个新的实体，默认状态为存活。

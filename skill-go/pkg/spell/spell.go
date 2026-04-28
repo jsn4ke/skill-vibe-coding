@@ -92,26 +92,28 @@ type TargetInfo struct {
 	Damage      float64
 	Healing     float64
 	Crit        bool
+	TimeDelay   int32 // 命中延迟 (ms), 对齐 TC 的 TargetInfo::TimeDelay
 }
 
 // Spell 表示一个法术实例，包含完整的施法状态和数据
 type Spell struct {
-	ID            SpellID
-	Info          *SpellInfo
-	State         SpellState
-	Caster        Caster
-	CastFlags     CastFlags
-	Targets       TargetData
-	CastTime      uint32
-	Timer         int32
-	HitTimer      int32
-	Result        SpellCastResult
-	TargetInfos   []TargetInfo
-	Bus           *event.Bus
-	OnCancel      CancelHook
-	OnAuraCreated AuraCreatedFunc
-	SpellValues   map[uint8]float64
-	Engine        SpellEngineRef
+	ID                    SpellID
+	Info                  *SpellInfo
+	State                 SpellState
+	Caster                Caster
+	CastFlags             CastFlags
+	Targets               TargetData
+	CastTime              uint32
+	Timer                 int32
+	Result                SpellCastResult
+	TargetInfos           []TargetInfo
+	Bus                   *event.Bus
+	OnCancel              CancelHook
+	OnAuraCreated         AuraCreatedFunc
+	DoDamageAndTriggersFn func(s *Spell) // 伤害结算函数，由 Engine 在 CastSpell 时设置
+	SpellValues           map[uint8]float64
+	Engine                SpellEngineRef
+	launchHandled         bool // LaunchPhase 是否已执行，对齐 TC 的 m_launchHandled
 }
 
 // Caster 是施法者接口，对齐 TC 的 Unit 施法相关方法
@@ -276,12 +278,21 @@ func (s *Spell) Update(diffMs int32) {
 			}
 		}
 	case StateLaunched:
-		if s.Timer > 0 {
-			s.Timer -= diffMs
-			if s.Timer <= 0 {
-				s.Timer = 0
-				s.HandleImmediate()
+		// 对齐 TC handle_delayed(): Timer 正计累计经过时间 (ms)
+		s.Timer += diffMs
+
+		// Phase 1: LaunchPhase 延迟执行，对齐 TC 的 m_launchHandled 逻辑
+		if !s.launchHandled {
+			if s.Info.LaunchDelay == 0 || s.Timer >= int32(s.Info.LaunchDelay) {
+				s.HandleLaunchPhase()
+				s.launchHandled = true
 			}
+			return
+		}
+
+		// Phase 2: 等待所有目标的 TimeDelay 到期
+		if s.Timer >= s.maxTargetDelay() {
+			s.HandleImmediate()
 		}
 	}
 }
@@ -362,7 +373,12 @@ func (s *Spell) Cast(skipCheck bool) {
 		s.TakePower()
 	}
 
-	s.HandleLaunchPhase()
+	// 对齐 TC: LaunchDelay == 0 时立即执行 LaunchPhase，否则推迟到 Update() 中
+	if s.Info.LaunchDelay == 0 {
+		s.HandleLaunchPhase()
+		s.launchHandled = true
+	}
+
 	s.State = StateLaunched
 
 	if s.Bus != nil {
@@ -392,15 +408,15 @@ func (s *Spell) Cast(skipCheck bool) {
 	if s.Info.IsChanneled {
 		// 对齐 TC: 引导法术在进入引导状态前处理 Hit 阶段
 		s.HandleHitPhase()
+		s.DoDamageAndTriggers()
 		s.State = StateChanneling
 		s.Timer = int32(s.Info.Duration)
-	} else if s.Info.Speed > 0 {
-		s.HitTimer = s.calculateHitDelay()
-		s.Timer = s.HitTimer
-	} else if s.Info.LaunchDelay == 0 {
-		s.HandleImmediate()
+	} else if s.Info.HasHitDelay() {
+		// 对齐 TC: 有命中延迟时计算每个目标的 TimeDelay, Timer 从 0 开始正计
+		s.calculateTargetDelays()
+		s.Timer = 0
 	} else {
-		s.Timer = int32(s.Info.LaunchDelay)
+		s.HandleImmediate()
 	}
 }
 
@@ -436,7 +452,15 @@ func (s *Spell) HandleHitPhase() {
 // HandleImmediate 处理即时法术的 Hit 阶段并完成，对齐 TC handle_immediate()
 func (s *Spell) HandleImmediate() {
 	s.HandleHitPhase()
+	s.DoDamageAndTriggers()
 	s.Finish(CastOK)
+}
+
+// DoDamageAndTriggers 执行伤害/治疗结算，对齐 TC 的 DoDamageAndTriggers。
+func (s *Spell) DoDamageAndTriggers() {
+	if s.DoDamageAndTriggersFn != nil {
+		s.DoDamageAndTriggersFn(s)
+	}
 }
 
 func (s *Spell) Cancel() {
@@ -688,18 +712,44 @@ func (s *Spell) TakePower() {
 	}
 }
 
-func (s *Spell) calculateHitDelay() int32 {
-	if len(s.TargetInfos) == 0 {
-		return 0
+// calculateTargetDelays 计算每个目标的命中延迟 (ms)，对齐 TC AddUnitTarget() 中的 TimeDelay 计算。
+// 公式: TimeDelay = LaunchDelay + max(dist/Speed*1000, MinDuration)
+func (s *Spell) calculateTargetDelays() {
+	launchDelayMs := int32(s.Info.LaunchDelay)
+	for i := range s.TargetInfos {
+		hitDelayMs := launchDelayMs
+		if s.Info.Speed > 0 {
+			dist := s.getTargetDistance(s.TargetInfos[i].TargetID)
+			if dist < 5.0 {
+				dist = 5.0
+			}
+			flightMs := int32(dist / s.Info.Speed * 1000.0)
+			minDurMs := int32(s.Info.MinDuration)
+			if flightMs < minDurMs {
+				flightMs = minDurMs
+			}
+			hitDelayMs += flightMs
+		}
+		s.TargetInfos[i].TimeDelay = hitDelayMs
 	}
+}
+
+// getTargetDistance 获取施法者到指定目标的距离，对齐 TC 的 GetDistance（最小 5 码）。
+func (s *Spell) getTargetDistance(targetID uint64) float64 {
 	casterPos := s.Caster.GetPosition()
-	targetPos := s.Caster.GetTargetPosition(s.TargetInfos[0].TargetID)
-	dist := positionDistance(casterPos, targetPos)
-	dist = math.Max(dist, 5.0)
-	hitDelaySec := dist / s.Info.Speed
-	minDelayMs := float64(s.Info.MinDuration)
-	hitDelayMs := math.Max(hitDelaySec*1000.0, minDelayMs)
-	return int32(hitDelayMs)
+	targetPos := s.Caster.GetTargetPosition(targetID)
+	return positionDistance(casterPos, targetPos)
+}
+
+// maxTargetDelay 返回所有目标中的最大 TimeDelay。
+func (s *Spell) maxTargetDelay() int32 {
+	var max int32
+	for _, ti := range s.TargetInfos {
+		if ti.TimeDelay > max {
+			max = ti.TimeDelay
+		}
+	}
+	return max
 }
 
 // --- targeting.SpellTargetRef 接口实现 ---

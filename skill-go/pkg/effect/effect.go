@@ -63,7 +63,7 @@ func ProcessLaunchPhase(s *spell.Spell) {
 	if s.Info == nil {
 		return
 	}
-	sp := s.Caster.GetStatValue(3) // stat.SpellPower = 3
+	sp := s.Caster.GetStatValue(uint8(4)) // stat.SpellPower = 4
 	casterID := s.Caster.GetID()
 
 	// 阶段 1: Launch（无目标），对齐 TC HandleLaunchPhase 的 LAUNCH 部分
@@ -110,7 +110,7 @@ func ProcessHitPhase(s *spell.Spell) {
 	if s.Info == nil {
 		return
 	}
-	sp := s.Caster.GetStatValue(3) // stat.SpellPower = 3
+	sp := s.Caster.GetStatValue(uint8(4)) // stat.SpellPower = 4
 	casterID := s.Caster.GetID()
 
 	// 阶段 3: Hit（无目标），对齐 TC _handle_immediate_phase 的 HIT 部分

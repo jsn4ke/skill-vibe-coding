@@ -13,14 +13,14 @@ import (
 // 光环创建和取消清理完全自动。
 // RegisterScripts 仅设置周期飞弹触发。
 var Info = spell.SpellInfo{
-	ID:          5143,
-	Name:        "Arcane Missiles",
-	CastTime:    0,
-	Duration:    3000,
-	PowerCost:   85,
-	PowerType:   0,
-	RangeMax:    30,
-	IsChanneled: true,
+	ID:             5143,
+	Name:           "Arcane Missiles",
+	CastTime:       0,
+	Duration:       3000,
+	PowerCost:      85,
+	PowerType:      0,
+	RangeMax:       30,
+	IsChanneled:    true,
 	Attributes:     spell.AttrChanneled,
 	InterruptFlags: spell.InterruptMovement,
 	Effects: []spell.SpellEffectInfo{
@@ -38,10 +38,10 @@ var Info = spell.SpellInfo{
 
 // 法术 7268 — 奥术飞弹（由周期 tick 触发）
 var MissileInfo = spell.SpellInfo{
-	ID:        7268,
-	Name:      "Arcane Missile",
-	CastTime:  0,
-	RangeMax:  30,
+	ID:       7268,
+	Name:     "Arcane Missile",
+	CastTime: 0,
+	RangeMax: 30,
 	Effects: []spell.SpellEffectInfo{
 		{
 			EffectIndex: 0,

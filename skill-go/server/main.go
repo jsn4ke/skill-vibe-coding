@@ -10,10 +10,11 @@ import (
 
 // main 是技能系统的演示入口。
 // 完整的技能模拟和时间线验证在技能引擎测试中：
-//   skills/fireball/fireball_engine_test.go
-//   skills/blizzard/blizzard_engine_test.go
-//   skills/arcane-missiles/arcane_missiles_engine_test.go
-//   skills/living-bomb/living_bomb_engine_test.go
+//
+//	skills/fireball/fireball_engine_test.go
+//	skills/blizzard/blizzard_engine_test.go
+//	skills/arcane-missiles/arcane_missiles_engine_test.go
+//	skills/living-bomb/living_bomb_engine_test.go
 func main() {
 	fmt.Println("=== Skill System Demo ===")
 

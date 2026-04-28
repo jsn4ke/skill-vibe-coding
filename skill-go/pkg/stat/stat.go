@@ -5,6 +5,7 @@ type StatType uint8
 
 const (
 	Health StatType = iota
+	MaxHealth
 	Mana
 	AttackPower
 	SpellPower
@@ -23,8 +24,8 @@ type Modifier struct {
 
 // StatEntry 表示一个属性条目，包含基础值和修改器列表。
 type StatEntry struct {
-	Base       float64
-	Modifiers  []Modifier
+	Base      float64
+	Modifiers []Modifier
 }
 
 // Value 计算属性的最终值：基础值 + 所有固定值加成，再乘以 (1 + 所有百分比加成)。

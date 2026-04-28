@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"math"
 	"skill-go/pkg/aura"
+	"skill-go/pkg/combat"
 	"skill-go/pkg/cooldown"
 	"skill-go/pkg/effect"
 	"skill-go/pkg/entity"
 	"skill-go/pkg/event"
+	"skill-go/pkg/proc"
 	"skill-go/pkg/script"
 	"skill-go/pkg/spell"
 	"skill-go/pkg/stat"
@@ -26,6 +28,7 @@ type Engine struct {
 	bus      *event.Bus
 	registry *script.Registry
 	auraMgr  *aura.Manager
+	procMgr  *proc.Manager
 	renderer *timeline.TimelineRenderer
 
 	// currentTime 随每次 Tick 累加的模拟时间
@@ -49,12 +52,13 @@ func New() *Engine {
 	r.SubscribeAll(bus)
 
 	return &Engine{
-		units:       make(map[uint64]*unit.Unit),
-		bus:         bus,
-		registry:    reg,
-		auraMgr:     auraMgr,
-		renderer:    r,
-		nextUnitID:  1,
+		units:      make(map[uint64]*unit.Unit),
+		bus:        bus,
+		registry:   reg,
+		auraMgr:    auraMgr,
+		procMgr:    proc.NewManager(),
+		renderer:   r,
+		nextUnitID: 1,
 	}
 }
 
@@ -123,6 +127,9 @@ func (e *Engine) Registry() *script.Registry { return e.registry }
 
 // AuraMgr 返回光环管理器。
 func (e *Engine) AuraMgr() *aura.Manager { return e.auraMgr }
+
+// ProcMgr 返回触发器管理器。
+func (e *Engine) ProcMgr() *proc.Manager { return e.procMgr }
 
 // Renderer 返回时间线渲染器。
 func (e *Engine) Renderer() *timeline.TimelineRenderer { return e.renderer }
@@ -203,7 +210,8 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 
 	s := spell.NewSpell(spell.SpellID(info.ID), info, caster, flags)
 	s.Bus = e.bus
-	s.Engine = e // 连接引擎引用，用于打断检查
+	s.Engine = e                                    // 连接引擎引用，用于打断检查
+	s.DoDamageAndTriggersFn = e.doDamageAndTriggers // 连接伤害结算
 
 	// 连接 OnAuraCreated，使效果管线能自动注册光环
 	s.OnAuraCreated = func(a interface{}) {
@@ -236,7 +244,7 @@ func (e *Engine) CastSpell(caster *unit.Unit, info *spell.SpellInfo, opts ...Cas
 	}
 
 	isTriggeredInstant := cfg.triggered && !info.IsChanneled
-	isNormalInstant := !isTriggeredInstant && s.CastTime == 0 && !info.IsChanneled && info.Speed == 0 && info.LaunchDelay == 0
+	isNormalInstant := !isTriggeredInstant && s.CastTime == 0 && !info.IsChanneled && !info.HasHitDelay()
 
 	if isTriggeredInstant {
 		// 路径 A：触发即时 — 同步完成，无需注册
@@ -290,7 +298,7 @@ type unitTargetAdapter struct {
 	unit *unit.Unit
 }
 
-func (a *unitTargetAdapter) GetID() uint64                       { return a.unit.ID() }
+func (a *unitTargetAdapter) GetID() uint64 { return a.unit.ID() }
 func (a *unitTargetAdapter) GetPosition() targeting.TargetPosition {
 	p := a.unit.Entity.Pos
 	return &entityPosAdapter{pos: p}
@@ -365,4 +373,109 @@ func (e *Engine) RemoveOwnedAurasBySpellID(casterID uint64, spellID spell.SpellI
 		}
 		e.auraMgr.RemoveAuraFromHosts(a, caster, target, aura.RemoveByCancel)
 	}
+}
+
+// doDamageAndTriggers 执行法术的伤害/治疗结算，对齐 TC 的 DoDamageAndTriggers。
+func (e *Engine) doDamageAndTriggers(s *spell.Spell) {
+	for i := range s.TargetInfos {
+		ti := &s.TargetInfos[i]
+		if ti.Damage == 0 && ti.Healing == 0 {
+			continue
+		}
+		ctx := combat.SettlementContext{
+			SourceID:   s.Caster.GetID(),
+			TargetID:   ti.TargetID,
+			SpellID:    uint32(s.ID),
+			Damage:     ti.Damage,
+			Healing:    ti.Healing,
+			IsPeriodic: false,
+			IsCrit:     ti.Crit,
+			SpellName:  s.Info.Name,
+		}
+		e.settleOneTarget(ctx)
+	}
+}
+
+// settleOneTarget 对单个目标执行伤害/治疗结算，对齐 TC 的 DoDamageAndTriggers 单目标流程。
+func (e *Engine) settleOneTarget(ctx combat.SettlementContext) {
+	target := e.GetUnit(ctx.TargetID)
+	if target == nil || !target.IsAlive() {
+		return
+	}
+
+	// 伤害结算，对齐 TC 的 DealSpellDamage → DealDamage
+	if ctx.Damage > 0 {
+		actualDelta := target.ModifyHealth(-ctx.Damage)
+
+		// 受伤打断光环，对齐 TC 的 RemoveAurasWithInterruptFlags(Damage)
+		if actualDelta < 0 {
+			target.RemoveAurasWithInterruptFlags(spell.AuraInterruptOnDamage)
+		}
+
+		// 发布伤害事件
+		e.bus.Publish(event.Event{
+			Type:     event.OnDamageDealt,
+			SourceID: ctx.SourceID,
+			TargetID: ctx.TargetID,
+			SpellID:  ctx.SpellID,
+			Value:    -actualDelta,
+			Extra:    map[string]any{"crit": ctx.IsCrit, "spellName": ctx.SpellName},
+		})
+		e.bus.Publish(event.Event{
+			Type:     event.OnDamageTaken,
+			SourceID: ctx.TargetID,
+			TargetID: ctx.SourceID,
+			SpellID:  ctx.SpellID,
+			Value:    -actualDelta,
+			Extra:    map[string]any{"crit": ctx.IsCrit, "spellName": ctx.SpellName},
+		})
+
+		// 死亡处理，对齐 TC 的 DealDamage 中 health <= 0 判定
+		if actualDelta < 0 && target.Stats.Get(stat.Health) <= 0 && target.IsAlive() {
+			target.Kill(ctx.SourceID)
+		}
+	}
+
+	// 治疗结算，对齐 TC 的 HealBySpell
+	if ctx.Healing > 0 {
+		actualDelta := target.ModifyHealth(ctx.Healing)
+
+		e.bus.Publish(event.Event{
+			Type:     event.OnHealDealt,
+			SourceID: ctx.SourceID,
+			TargetID: ctx.TargetID,
+			SpellID:  ctx.SpellID,
+			Value:    actualDelta,
+			Extra:    map[string]any{"crit": ctx.IsCrit, "spellName": ctx.SpellName},
+		})
+		e.bus.Publish(event.Event{
+			Type:     event.OnHealTaken,
+			SourceID: ctx.TargetID,
+			TargetID: ctx.SourceID,
+			SpellID:  ctx.SpellID,
+			Value:    actualDelta,
+			Extra:    map[string]any{"crit": ctx.IsCrit, "spellName": ctx.SpellName},
+		})
+	}
+
+	// Proc 触发，对齐 TC 的 ProcSkillsAndAuras
+	attackerProcEvent := combat.BuildProcEvent(ctx)
+	victimProcEvent := combat.BuildVictimProcEvent(ctx)
+	e.procMgr.Check(attackerProcEvent)
+	e.procMgr.Check(victimProcEvent)
+}
+
+// SettlePeriodicDamage 结算光环周期性伤害/治疗，对齐 TC 的 Aura::PeriodicTick → DealDamage。
+func (e *Engine) SettlePeriodicDamage(sourceID, targetID uint64, spellID uint32, damage, healing float64, isCrit bool, spellName string) {
+	ctx := combat.SettlementContext{
+		SourceID:   sourceID,
+		TargetID:   targetID,
+		SpellID:    spellID,
+		Damage:     damage,
+		Healing:    healing,
+		IsPeriodic: true,
+		IsCrit:     isCrit,
+		SpellName:  spellName,
+	}
+	e.settleOneTarget(ctx)
 }

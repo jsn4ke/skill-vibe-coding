@@ -116,7 +116,7 @@ func TestFireball_FullCastLifecycle(t *testing.T) {
 	}
 
 	// Projectile arrives
-	hitDelay := s.HitTimer
+	hitDelay := s.TargetInfos[0].TimeDelay
 	s.Update(hitDelay)
 	if s.State != spell.StateFinished {
 		t.Fatalf("expected StateFinished, got %v", s.State)
@@ -143,8 +143,8 @@ func TestFireball_NoDamageDuringFlight(t *testing.T) {
 	if s.State != spell.StateLaunched {
 		t.Fatalf("expected StateLaunched, got %v", s.State)
 	}
-	if s.HitTimer <= 0 {
-		t.Fatal("expected positive HitTimer for projectile spell")
+	if s.TargetInfos[0].TimeDelay <= 0 {
+		t.Fatal("expected positive TimeDelay for projectile spell")
 	}
 
 	// 对齐 TC: LaunchTarget 在 Cast() 中执行，伤害在发射时已计算（不是命中时）
@@ -172,10 +172,10 @@ func TestFireball_HitDelayCalculation(t *testing.T) {
 	s.Prepare()
 	s.Update(3500) // cast completes, enters StateLaunched
 
-	// distance = 30, Speed = 20 → hitDelay = 30/20 * 1000 = 1500ms
+	// distance = 30, Speed = 20 → TimeDelay = 30/20 * 1000 = 1500ms
 	expected := int32(1500)
-	if s.HitTimer != expected {
-		t.Errorf("expected HitTimer %d, got %d", expected, s.HitTimer)
+	if s.TargetInfos[0].TimeDelay != expected {
+		t.Errorf("expected TimeDelay %d, got %d", expected, s.TargetInfos[0].TimeDelay)
 	}
 }
 
@@ -193,8 +193,8 @@ func TestFireball_DistanceClamp(t *testing.T) {
 
 	// distance clamped to 5 yards → 5/20 * 1000 = 250ms
 	expected := int32(250)
-	if s.HitTimer != expected {
-		t.Errorf("expected HitTimer %d (5yd clamp), got %d", expected, s.HitTimer)
+	if s.TargetInfos[0].TimeDelay != expected {
+		t.Errorf("expected TimeDelay %d (5yd clamp), got %d", expected, s.TargetInfos[0].TimeDelay)
 	}
 }
 
@@ -211,8 +211,8 @@ func TestFireball_MinDurationClamp(t *testing.T) {
 	s.Update(3500)
 
 	// dist/Speed = 250ms, but MinDuration = 500ms → 500 wins
-	if s.HitTimer != 500 {
-		t.Errorf("expected HitTimer 500 (MinDuration clamp), got %d", s.HitTimer)
+	if s.TargetInfos[0].TimeDelay != 500 {
+		t.Errorf("expected TimeDelay 500 (MinDuration clamp), got %d", s.TargetInfos[0].TimeDelay)
 	}
 }
 
@@ -231,8 +231,8 @@ func TestFireball_CritIncreasesDamage(t *testing.T) {
 		s := spell.NewSpell(spell.SpellID(info.ID), info, caster, spell.TriggeredNone)
 		s.Targets.UnitTargetID = 2
 		s.Prepare()
-		s.Update(3500)       // cast
-		s.Update(s.HitTimer) // projectile
+		s.Update(3500)                       // cast
+		s.Update(s.TargetInfos[0].TimeDelay) // projectile
 		totalNormal += s.TargetInfos[0].Damage
 	}
 
@@ -278,8 +278,8 @@ func TestFireball_AppliesDoTAura(t *testing.T) {
 	}
 	defer func() { spell.ProcessLaunchPhaseFn = origLaunchFn; spell.ProcessHitPhaseFn = origHitFn }()
 
-	s.Update(3500)       // cast
-	s.Update(s.HitTimer) // projectile
+	s.Update(3500)                       // cast
+	s.Update(s.TargetInfos[0].TimeDelay) // projectile
 
 	ctx := &effect.Context{
 		Spell:            s,

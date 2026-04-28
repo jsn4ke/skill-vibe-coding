@@ -23,25 +23,25 @@ type ChargeEntry struct {
 
 // History 管理法术冷却、充能、公共冷却和魔法学校锁定，对齐 TC 的 SpellHistory。
 type History struct {
-	mu              sync.RWMutex
-	cooldowns       map[spell.SpellID]*CooldownEntry
+	mu                sync.RWMutex
+	cooldowns         map[spell.SpellID]*CooldownEntry
 	categoryCooldowns map[uint32]*CooldownEntry
-	charges         map[spell.SpellID][]ChargeEntry
-	maxCharges      map[spell.SpellID]int32
-	chargeRecharge  map[spell.SpellID]time.Duration
-	gcdCategory     map[uint32]time.Time
-	schoolLockouts  [7]time.Time
+	charges           map[spell.SpellID][]ChargeEntry
+	maxCharges        map[spell.SpellID]int32
+	chargeRecharge    map[spell.SpellID]time.Duration
+	gcdCategory       map[uint32]time.Time
+	schoolLockouts    [7]time.Time
 }
 
 // NewHistory 创建一个空的冷却历史记录。
 func NewHistory() *History {
 	return &History{
-		cooldowns:       make(map[spell.SpellID]*CooldownEntry),
+		cooldowns:         make(map[spell.SpellID]*CooldownEntry),
 		categoryCooldowns: make(map[uint32]*CooldownEntry),
-		charges:         make(map[spell.SpellID][]ChargeEntry),
-		maxCharges:      make(map[spell.SpellID]int32),
-		chargeRecharge:  make(map[spell.SpellID]time.Duration),
-		gcdCategory:     make(map[uint32]time.Time),
+		charges:           make(map[spell.SpellID][]ChargeEntry),
+		maxCharges:        make(map[spell.SpellID]int32),
+		chargeRecharge:    make(map[spell.SpellID]time.Duration),
+		gcdCategory:       make(map[uint32]time.Time),
 	}
 }
 

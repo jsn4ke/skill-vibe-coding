@@ -67,6 +67,11 @@ func (si *SpellInfo) HasAttribute(attr SpellAttribute) bool {
 	return si.Attributes&attr != 0
 }
 
+// HasHitDelay 判断法术是否有命中延迟（弹道速度或发射延迟），对齐 TC 的 SpellInfo::HasHitDelay。
+func (si *SpellInfo) HasHitDelay() bool {
+	return si.Speed > 0 || si.LaunchDelay > 0
+}
+
 // SpellEffectInfo 定义法术效果的静态信息。
 type SpellEffectInfo struct {
 	EffectIndex        uint8

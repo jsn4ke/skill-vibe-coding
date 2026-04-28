@@ -11,8 +11,8 @@ import (
 type ProcFlag uint32
 
 const (
-	FlagNone          ProcFlag = 0
-	FlagKill          ProcFlag = 1 << iota
+	FlagNone ProcFlag = 0
+	FlagKill ProcFlag = 1 << iota
 	FlagMeleeSwing
 	FlagSpellDamageDealt
 	FlagSpellDamageTaken
@@ -33,8 +33,8 @@ const (
 type SpellTypeMask uint8
 
 const (
-	TypeMaskNone      SpellTypeMask = 0
-	TypeMaskDamage    SpellTypeMask = 1 << iota
+	TypeMaskNone   SpellTypeMask = 0
+	TypeMaskDamage SpellTypeMask = 1 << iota
 	TypeMaskHeal
 	TypeMaskNonDmgHeal
 	TypeMaskAll SpellTypeMask = TypeMaskDamage | TypeMaskHeal | TypeMaskNonDmgHeal
@@ -44,8 +44,8 @@ const (
 type SpellPhaseMask uint8
 
 const (
-	PhaseNone   SpellPhaseMask = 0
-	PhaseCast   SpellPhaseMask = 1 << iota
+	PhaseNone SpellPhaseMask = 0
+	PhaseCast SpellPhaseMask = 1 << iota
 	PhaseHit
 	PhaseFinish
 )
@@ -107,15 +107,15 @@ func (m *Manager) Unregister(spellID spell.SpellID) {
 
 // ProcEvent 表示一次触发事件，包含事件标志和上下文信息。
 type ProcEvent struct {
-	Flag       ProcFlag
-	SpellID    spell.SpellID
-	TypeMask   SpellTypeMask
-	PhaseMask  SpellPhaseMask
-	HitMask    HitMask
-	SourceID   uint64
-	TargetID   uint64
-	Damage     float64
-	Healing    float64
+	Flag      ProcFlag
+	SpellID   spell.SpellID
+	TypeMask  SpellTypeMask
+	PhaseMask SpellPhaseMask
+	HitMask   HitMask
+	SourceID  uint64
+	TargetID  uint64
+	Damage    float64
+	Healing   float64
 }
 
 // ProcResult 表示触发判定的结果。

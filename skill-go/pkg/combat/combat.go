@@ -1,10 +1,8 @@
 package combat
 
 import (
-	"math/rand"
-
-	"skill-go/pkg/entity"
-	"skill-go/pkg/stat"
+	"skill-go/pkg/proc"
+	"skill-go/pkg/spell"
 )
 
 // HitResult 表示命中判定的结果类型。
@@ -21,82 +19,98 @@ const (
 	HitEvade
 )
 
-// DamageInfo 包含一次伤害的完整信息。
-type DamageInfo struct {
-	Attacker *entity.Entity
-	Target   *entity.Entity
-	Base     float64
-	Result   HitResult
-	Final    float64
-	SpellID  uint32
+// SettlementContext 伤害/治疗结算上下文，对齐 TC 的 DoDamageAndTriggers 入参。
+type SettlementContext struct {
+	SourceID   uint64  // 攻击者/施法者 ID
+	TargetID   uint64  // 目标 ID
+	SpellID    uint32  // 法术 ID
+	Damage     float64 // 伤害值
+	Healing    float64 // 治疗值
+	IsPeriodic bool    // 是否周期性效果（光环 tick）
+	IsCrit     bool    // 是否暴击
+	SpellName  string  // 法术名称
 }
 
-// CombatManager 管理战斗状态。
-type CombatManager struct {
-	inCombat map[entity.EntityID]bool
-}
+// BuildProcEvent 从结算上下文构建攻击者侧 Proc 事件，对齐 TC 的 ProcSkillsAndAuras。
+func BuildProcEvent(ctx SettlementContext) proc.ProcEvent {
+	var flag proc.ProcFlag
+	var typeMask proc.SpellTypeMask
 
-// NewCombatManager 创建一个新的战斗管理器。
-func NewCombatManager() *CombatManager {
-	return &CombatManager{
-		inCombat: make(map[entity.EntityID]bool),
+	if ctx.Damage > 0 {
+		if ctx.IsPeriodic {
+			flag = proc.FlagPeriodicDamageDealt
+		} else {
+			flag = proc.FlagSpellDamageDealt
+		}
+		typeMask = proc.TypeMaskDamage
+	} else if ctx.Healing > 0 {
+		if ctx.IsPeriodic {
+			flag = proc.FlagPeriodicHealDealt
+		} else {
+			flag = proc.FlagSpellHealDealt
+		}
+		typeMask = proc.TypeMaskHeal
+	} else {
+		flag = proc.FlagSpellHit
+		typeMask = proc.TypeMaskNonDmgHeal
+	}
+
+	hitMask := proc.HitNormal
+	if ctx.IsCrit {
+		hitMask |= proc.HitCrit
+	}
+
+	return proc.ProcEvent{
+		Flag:      flag,
+		SpellID:   spell.SpellID(ctx.SpellID),
+		TypeMask:  typeMask,
+		PhaseMask: proc.PhaseHit,
+		HitMask:   hitMask,
+		SourceID:  ctx.SourceID,
+		TargetID:  ctx.TargetID,
+		Damage:    ctx.Damage,
+		Healing:   ctx.Healing,
 	}
 }
 
-// EnterCombat 将实体置入战斗状态。
-func (cm *CombatManager) EnterCombat(e *entity.Entity) {
-	cm.inCombat[e.ID] = true
-	e.State = e.State.Set(entity.StateInCombat)
-}
+// BuildVictimProcEvent 从结算上下文构建受击者侧 Proc 事件。
+func BuildVictimProcEvent(ctx SettlementContext) proc.ProcEvent {
+	var flag proc.ProcFlag
+	var typeMask proc.SpellTypeMask
 
-// LeaveCombat 将实体移出战斗状态。
-func (cm *CombatManager) LeaveCombat(e *entity.Entity) {
-	delete(cm.inCombat, e.ID)
-	e.State = e.State.Clear(entity.StateInCombat)
-}
-
-// IsInCombat 判断实体是否处于战斗状态。
-func (cm *CombatManager) IsInCombat(e *entity.Entity) bool {
-	return cm.inCombat[e.ID]
-}
-
-// CalculateDamage 根据基础伤害和攻击者属性计算最终伤害。
-func CalculateDamage(base float64, attackerStats *stat.StatSet) float64 {
-	ap := attackerStats.Get(stat.AttackPower)
-	sp := attackerStats.Get(stat.SpellPower)
-	bonus := ap*0.1 + sp*0.3
-	return base + bonus
-}
-
-// RollHitResult 根据攻击者属性和目标状态进行命中判定。
-func RollHitResult(attackerStats *stat.StatSet, targetState entity.UnitState) HitResult {
-	if targetState.Has(entity.StateDead) {
-		return HitEvade
+	if ctx.Damage > 0 {
+		if ctx.IsPeriodic {
+			flag = proc.FlagPeriodicDamageTaken
+		} else {
+			flag = proc.FlagSpellDamageTaken
+		}
+		typeMask = proc.TypeMaskDamage
+	} else if ctx.Healing > 0 {
+		if ctx.IsPeriodic {
+			flag = proc.FlagPeriodicHealTaken
+		} else {
+			flag = proc.FlagSpellHealTaken
+		}
+		typeMask = proc.TypeMaskHeal
+	} else {
+		flag = proc.FlagSpellHit
+		typeMask = proc.TypeMaskNonDmgHeal
 	}
 
-	critChance := attackerStats.Get(stat.CritChance)
-	r := rand.Float64()
-
-	switch {
-	case r < 0.05:
-		return HitMiss
-	case r < 0.05+critChance:
-		return HitCrit
-	default:
-		return HitNormal
+	hitMask := proc.HitNormal
+	if ctx.IsCrit {
+		hitMask |= proc.HitCrit
 	}
-}
 
-// ApplyDamageInfo 根据命中结果计算最终伤害值。
-func ApplyDamageInfo(info *DamageInfo) {
-	switch info.Result {
-	case HitNormal:
-		info.Final = info.Base
-	case HitCrit:
-		info.Final = info.Base * 2.0
-	case HitMiss, HitEvade, HitImmune:
-		info.Final = 0
-	case HitDodge, HitParry, HitBlock:
-		info.Final = 0
+	return proc.ProcEvent{
+		Flag:      flag,
+		SpellID:   spell.SpellID(ctx.SpellID),
+		TypeMask:  typeMask,
+		PhaseMask: proc.PhaseHit,
+		HitMask:   hitMask,
+		SourceID:  ctx.SourceID,
+		TargetID:  ctx.TargetID,
+		Damage:    ctx.Damage,
+		Healing:   ctx.Healing,
 	}
 }

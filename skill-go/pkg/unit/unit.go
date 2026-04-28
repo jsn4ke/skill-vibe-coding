@@ -15,10 +15,10 @@ import (
 // 每个 Unit 持有自己的活跃法术、拥有的光环和施加的光环。
 // 参考：tc-references/unit-update-architecture.md
 type Unit struct {
-	Entity   *entity.Entity
-	Stats    *stat.StatSet
-	History  *cooldown.History
-	engine   EngineRef
+	Entity  *entity.Entity
+	Stats   *stat.StatSet
+	History *cooldown.History
+	engine  EngineRef
 
 	// activeSpells — 当前正在施放、引导或飞行中的法术，对齐 TC 的 m_currentSpells。
 	activeSpells []*spell.Spell
@@ -43,6 +43,8 @@ type EngineRef interface {
 	Tick() time.Duration
 	AuraMgr() *aura.Manager
 	ScriptRegistry() *script.Registry
+	// SettlePeriodicDamage 结算光环周期性伤害/治疗，对齐 TC 的 Aura::PeriodicTick → DealDamage
+	SettlePeriodicDamage(sourceID, targetID uint64, spellID uint32, damage, healing float64, isCrit bool, spellName string)
 }
 
 // NewUnit 创建一个新 Unit，使用指定的实体和属性。
@@ -85,9 +87,9 @@ func (u *Unit) Update(diff int32) {
 
 // --- spell.Caster 接口实现 ---
 
-func (u *Unit) GetID() uint64          { return u.ID() }
-func (u *Unit) IsAlive() bool          { return u.Entity.IsAlive() }
-func (u *Unit) CanCast() bool          { return u.Entity.CanCast() }
+func (u *Unit) GetID() uint64  { return u.ID() }
+func (u *Unit) IsAlive() bool  { return u.Entity.IsAlive() }
+func (u *Unit) CanCast() bool  { return u.Entity.CanCast() }
 func (u *Unit) IsMoving() bool { return u.isMoving }
 
 // SetPosition 更新单位位置。移动检测在 Update() 中进行。
@@ -109,7 +111,7 @@ func (u *Unit) GetTargetPosition(targetID uint64) spell.Position {
 func (u *Unit) ModifyPower(pt uint8, amount float64) bool {
 	// Map TC power types to stat types.
 	// TC: 0=mana, 1=rage, 2=focus, 3=energy, etc.
-	// Our stat: 0=health, 1=mana, ...
+	// Our stat: 0=health, 1=maxhealth, 2=mana, ...
 	var st stat.StatType
 	switch pt {
 	case 0: // PowerMana
@@ -120,6 +122,76 @@ func (u *Unit) ModifyPower(pt uint8, amount float64) bool {
 	cur := u.Stats.Get(st)
 	u.Stats.SetBase(st, cur+amount)
 	return true
+}
+
+// ModifyHealth 修改单位生命值，对齐 TC 的 Unit::ModifyHealth。
+// 生命值被钳制在 [0, MaxHealth] 范围内。返回实际变化的量。
+// 调用方负责在血量归零时调用 Kill()。
+func (u *Unit) ModifyHealth(delta float64) float64 {
+	oldHealth := u.Stats.Get(stat.Health)
+	newHealth := oldHealth + delta
+
+	maxHealth := u.Stats.Get(stat.MaxHealth)
+	if maxHealth > 0 && newHealth > maxHealth {
+		newHealth = maxHealth
+	}
+	if newHealth < 0 {
+		newHealth = 0
+	}
+
+	u.Stats.SetBase(stat.Health, newHealth)
+	return newHealth - oldHealth
+}
+
+// Kill 将单位置入死亡状态，对齐 TC 的 Unit::Kill()。
+func (u *Unit) Kill(attackerID uint64) {
+	u.Entity.State = entity.StateDead
+	u.Entity.State = u.Entity.State.Clear(entity.StateAlive)
+	u.RemoveAllAurasOnDeath()
+
+	if bus := u.getBus(); bus != nil {
+		bus.Publish(event.Event{
+			Type:     event.OnDeath,
+			SourceID: attackerID,
+			TargetID: u.ID(),
+		})
+	}
+}
+
+// RemoveAllAurasOnDeath 移除死亡单位的所有光环，对齐 TC 的 RemoveAllAurasOnDeath。
+func (u *Unit) RemoveAllAurasOnDeath() {
+	if u.engine == nil {
+		return
+	}
+	mgr := u.engine.AuraMgr()
+
+	// 移除拥有的光环
+	var ownedCopy []*aura.Aura
+	for _, a := range u.ownedAuras {
+		ownedCopy = append(ownedCopy, a)
+	}
+	for _, a := range ownedCopy {
+		target := u.engine.GetUnit(a.TargetID)
+		if target == nil {
+			target = u
+		}
+		mgr.RemoveAuraFromHosts(a, u, target, aura.RemoveByDeath)
+	}
+	u.ownedAuras = nil
+
+	// 移除施加的光环
+	var appliedCopy []*aura.Aura
+	for _, a := range u.appliedAuras {
+		appliedCopy = append(appliedCopy, a)
+	}
+	for _, a := range appliedCopy {
+		owner := u.engine.GetUnit(a.CasterID)
+		if owner == nil {
+			continue
+		}
+		mgr.RemoveAuraFromHosts(a, owner, u, aura.RemoveByDeath)
+	}
+	u.appliedAuras = nil
 }
 
 // --- 活跃法术管理 ---
@@ -237,7 +309,7 @@ func (u *Unit) RemoveAurasWithInterruptFlags(flag spell.SpellAuraInterruptFlags)
 		}
 	}
 
-	// 通过光环管理器移除匹配的光环
+	// 通过光环管理器移除匹配的拥有光环
 	if u.engine != nil {
 		mgr := u.engine.AuraMgr()
 		for _, a := range toRemove {
@@ -246,6 +318,24 @@ func (u *Unit) RemoveAurasWithInterruptFlags(flag spell.SpellAuraInterruptFlags)
 				target = u // area aura fallback
 			}
 			mgr.RemoveAuraFromHosts(a, u, target, aura.RemoveByInterrupt)
+		}
+	}
+
+	// 同时移除匹配的施加光环（对齐 TC：受伤打断检查目标身上的光环）
+	var appliedToRemove []*aura.Aura
+	for _, a := range u.appliedAuras {
+		if a.InterruptFlags.HasFlag(flag) {
+			appliedToRemove = append(appliedToRemove, a)
+		}
+	}
+	if u.engine != nil {
+		mgr := u.engine.AuraMgr()
+		for _, a := range appliedToRemove {
+			owner := u.engine.GetUnit(a.CasterID)
+			if owner == nil {
+				continue
+			}
+			mgr.RemoveAuraFromHosts(a, owner, u, aura.RemoveByInterrupt)
 		}
 	}
 
@@ -344,7 +434,19 @@ func (u *Unit) tickSingleAura(a *aura.Aura, elapsed time.Duration, sp float64, b
 					})
 				}
 			}
-			_ = amount // TODO: apply damage/heal via combat system
+			// 通过引擎结算周期性伤害/治疗，对齐 TC 的 Aura::PeriodicTick → DealDamage
+			if u.engine != nil {
+				dmg := 0.0
+				heal := 0.0
+				if eff.AuraType == aura.AuraPeriodicDamage {
+					dmg = amount
+				} else if eff.AuraType == aura.AuraPeriodicHeal {
+					heal = amount
+				}
+				if dmg > 0 || heal > 0 {
+					u.engine.SettlePeriodicDamage(a.CasterID, a.TargetID, uint32(a.SpellID), dmg, heal, false, a.SpellName)
+				}
+			}
 		}
 	}
 }

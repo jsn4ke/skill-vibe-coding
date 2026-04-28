@@ -81,26 +81,26 @@ const (
 
 // Aura 表示一个光环实例。
 type Aura struct {
-	ID          uint64
-	SpellID     spell.SpellID
-	CasterID    uint64
-	TargetID    uint64
-	AuraType    AuraType
-	Duration    time.Duration
-	MaxDuration time.Duration
-	StackAmount uint8
-	MaxStack    uint8
-	StackRule   StackRule
-	Charges     int32
-	ProcChance  float64
-	PPM         float64
-	Effects     []AuraEffect
-	AppliedAt   time.Time
-	Elapsed     time.Duration
-	SpellName   string
-	IsAreaAura  bool
-	AreaCenter  [3]float64
-	AreaRadius  float64
+	ID             uint64
+	SpellID        spell.SpellID
+	CasterID       uint64
+	TargetID       uint64
+	AuraType       AuraType
+	Duration       time.Duration
+	MaxDuration    time.Duration
+	StackAmount    uint8
+	MaxStack       uint8
+	StackRule      StackRule
+	Charges        int32
+	ProcChance     float64
+	PPM            float64
+	Effects        []AuraEffect
+	AppliedAt      time.Time
+	Elapsed        time.Duration
+	SpellName      string
+	IsAreaAura     bool
+	AreaCenter     [3]float64
+	AreaRadius     float64
 	SpellValues    map[uint8]float64
 	InterruptFlags spell.SpellAuraInterruptFlags
 }
@@ -357,33 +357,33 @@ func (m *Manager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode Remo
 
 func auraTypeName(t AuraType) string {
 	names := map[AuraType]string{
-		AuraNone:             "None",
-		AuraPeriodicDamage:   "PeriodicDamage",
-		AuraPeriodicHeal:     "PeriodicHeal",
-		AuraModStat:          "ModStat",
-		AuraModStun:          "Stun",
-		AuraModRoot:          "Root",
-		AuraModSilence:       "Silence",
-		AuraModFear:          "Fear",
-		AuraModConfuse:       "Confuse",
-		AuraModCharm:         "Charm",
-		AuraModSpeed:         "ModSpeed",
-		AuraModAttackPower:   "ModAttackPower",
-		AuraModSpellPower:    "ModSpellPower",
-		AuraModResistance:    "ModResistance",
-		AuraModCritChance:    "ModCritChance",
-		AuraModHaste:         "ModHaste",
-		AuraModPacify:        "Pacify",
-		AuraModStealth:             "Stealth",
-		AuraPeriodicTriggerSpell:   "PeriodicTriggerSpell",
-		AuraProcTriggerSpell:       "ProcTriggerSpell",
-		AuraProcTriggerDamage: "ProcTriggerDamage",
-		AuraMounted:          "Mounted",
-		AuraSchoolImmunity:   "SchoolImmunity",
-		AuraMechanicImmunity: "MechanicImmunity",
-		AuraDamageImmunity:   "DamageImmunity",
-		AuraModIncreaseSpeed: "ModIncreaseSpeed",
-		AuraModDecreaseSpeed: "ModDecreaseSpeed",
+		AuraNone:                 "None",
+		AuraPeriodicDamage:       "PeriodicDamage",
+		AuraPeriodicHeal:         "PeriodicHeal",
+		AuraModStat:              "ModStat",
+		AuraModStun:              "Stun",
+		AuraModRoot:              "Root",
+		AuraModSilence:           "Silence",
+		AuraModFear:              "Fear",
+		AuraModConfuse:           "Confuse",
+		AuraModCharm:             "Charm",
+		AuraModSpeed:             "ModSpeed",
+		AuraModAttackPower:       "ModAttackPower",
+		AuraModSpellPower:        "ModSpellPower",
+		AuraModResistance:        "ModResistance",
+		AuraModCritChance:        "ModCritChance",
+		AuraModHaste:             "ModHaste",
+		AuraModPacify:            "Pacify",
+		AuraModStealth:           "Stealth",
+		AuraPeriodicTriggerSpell: "PeriodicTriggerSpell",
+		AuraProcTriggerSpell:     "ProcTriggerSpell",
+		AuraProcTriggerDamage:    "ProcTriggerDamage",
+		AuraMounted:              "Mounted",
+		AuraSchoolImmunity:       "SchoolImmunity",
+		AuraMechanicImmunity:     "MechanicImmunity",
+		AuraDamageImmunity:       "DamageImmunity",
+		AuraModIncreaseSpeed:     "ModIncreaseSpeed",
+		AuraModDecreaseSpeed:     "ModDecreaseSpeed",
 	}
 	if n, ok := names[t]; ok {
 		return n
