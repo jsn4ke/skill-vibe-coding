@@ -361,8 +361,14 @@ func (e *Engine) TriggerSpell(casterID, targetID uint64, spellID spellcore.Spell
 
 // SummonUnit 召唤一个新单位到指定位置，用于 EffectSummon。
 func (e *Engine) SummonUnit(casterID uint64, entry int32, pos [3]float64) uint64 {
-	e.nextUnitID++
-	id := e.nextUnitID
+	// 从现有单位中找到最大 ID，避免与 AddUnitWithID 创建的单位冲突
+	var maxID uint64
+	for id := range e.units {
+		if id > maxID {
+			maxID = id
+		}
+	}
+	id := maxID + 1
 	ent := entity.NewEntity(entity.EntityID(id), entity.TypePet, entity.Position{X: pos[0], Y: pos[1], Z: pos[2]})
 	stats := stat.NewStatSet()
 	u := unit.NewUnit(ent, stats, spellcore.NewHistory())
@@ -460,24 +466,25 @@ func (e *Engine) RemoveOwnedAurasBySpellID(casterID uint64, spellID spellcore.Sp
 	}
 }
 
-// doDamageAndTriggers 执行法术的伤害/治疗结算，对齐 TC 的 DoDamageAndTriggers。
+// doDamageAndTriggers 执行法术的伤害/治疗/能量结算，对齐 TC 的 DoDamageAndTriggers。
 func (e *Engine) doDamageAndTriggers(s *spellcore.Spell) {
 	for i := range s.TargetInfos {
 		ti := &s.TargetInfos[i]
-		if ti.Damage == 0 && ti.Healing == 0 {
-			continue
+
+		// 伤害/治疗结算
+		if ti.Damage != 0 || ti.Healing != 0 {
+			ctx := combat.SettlementContext{
+				SourceID:   s.Caster.GetID(),
+				TargetID:   ti.TargetID,
+				SpellID:    uint32(s.ID),
+				Damage:     ti.Damage,
+				Healing:    ti.Healing,
+				IsPeriodic: false,
+				IsCrit:     ti.Crit,
+				SpellName:  s.Info.Name,
+			}
+			e.settleOneTarget(ctx)
 		}
-		ctx := combat.SettlementContext{
-			SourceID:   s.Caster.GetID(),
-			TargetID:   ti.TargetID,
-			SpellID:    uint32(s.ID),
-			Damage:     ti.Damage,
-			Healing:    ti.Healing,
-			IsPeriodic: false,
-			IsCrit:     ti.Crit,
-			SpellName:  s.Info.Name,
-		}
-		e.settleOneTarget(ctx)
 
 		// 能量结算，对齐 TC 的 Spell::EffectEnergize
 		if ti.Energize != 0 {
