@@ -26,6 +26,7 @@ const (
 	OnSpellCancel
 	OnSpellFinish
 	OnAuraExpired
+	OnEnergize
 )
 
 // Event 表示一个游戏事件，包含来源、目标、法术和数值信息。

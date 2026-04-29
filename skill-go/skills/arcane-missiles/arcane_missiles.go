@@ -1,15 +1,13 @@
 package arcanemissiles
 
 import (
-	"skill-go/pkg/engine"
 	"skill-go/pkg/spellcore"
-	"skill-go/pkg/unit"
 )
 
 // 法术 5143 — 奥术飞弹（引导）
 // 引擎驱动：通过 eng.CastSpell(caster, &Info, engine.WithTarget(id)) 施放
 // 光环创建和取消清理完全自动。
-// RegisterScripts 仅设置周期飞弹触发。
+// 周期飞弹触发由引擎的 AuraPeriodicTriggerSpell 自动驱动，无需 RegisterScripts。
 var Info = spellcore.SpellInfo{
 	ID:             5143,
 	Name:           "Arcane Missiles",
@@ -51,15 +49,8 @@ var MissileInfo = spellcore.SpellInfo{
 	},
 }
 
-// RegisterScripts 设置周期飞弹触发。
-// 光环创建由 Cast() 期间的效果管线处理。
-// 取消清理由 Cancel() 的 RemoveOwnedAurasBySpellID 处理。
-func RegisterScripts(registry *spellcore.Registry, caster *unit.Unit, eng *engine.Engine) {
-	// 周期 tick 时：触发飞弹法术
-	registry.RegisterAuraHook(spellcore.SpellID(Info.ID), spellcore.AuraHookOnPeriodic, func(ctx *spellcore.AuraContext) {
-		eng.CastSpell(caster, &MissileInfo,
-			engine.WithTarget(ctx.TargetID),
-			engine.WithTriggered(),
-		)
-	})
+// RegisterSpells 将奥术飞弹的所有法术注册到配置表中。
+func RegisterSpells(store *spellcore.SpellStore) {
+	store.Register(&Info)
+	store.Register(&MissileInfo)
 }

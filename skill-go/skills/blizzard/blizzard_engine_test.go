@@ -24,6 +24,7 @@ func runBlizzardEngineTimeline() string {
 	eng.AddUnitWithID(3, entity.NewEntity(3, entity.TypeCreature, entity.Position{X: 12, Y: 1}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	// Cast Blizzard — channeled instant, Path B
 	eng.CastSpell(caster, &Info, engine.WithDestPos(10, 0, 0))
@@ -104,6 +105,7 @@ func TestBlizzard_EngineManaConsumed(t *testing.T) {
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	manaBefore := caster.Stats.Get(stat.Mana)
 	eng.CastSpell(caster, &Info, engine.WithDestPos(10, 0, 0))
@@ -122,6 +124,7 @@ func TestBlizzard_EngineChannelCancel(t *testing.T) {
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	s := eng.CastSpell(caster, &Info, engine.WithDestPos(10, 0, 0))
 
@@ -158,6 +161,7 @@ func TestBlizzard_EngineMovementCancelsChannel(t *testing.T) {
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	s := eng.CastSpell(caster, &Info, engine.WithDestPos(10, 0, 0))
 
@@ -197,6 +201,7 @@ func TestBlizzard_EngineTargetLeavesRange(t *testing.T) {
 	eng.AddUnitWithID(3, entity.NewEntity(3, entity.TypeCreature, entity.Position{X: 12}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	s := eng.CastSpell(caster, &Info, engine.WithDestPos(10, 0, 0))
 	if s.State != spellcore.StateChanneling {

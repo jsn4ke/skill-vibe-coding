@@ -37,3 +37,8 @@ var Info = spellcore.SpellInfo{
 		},
 	},
 }
+
+// RegisterSpells 将火球术的法术注册到配置表中。
+func RegisterSpells(store *spellcore.SpellStore) {
+	store.Register(&Info)
+}

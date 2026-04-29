@@ -77,13 +77,15 @@ type AuraCreatedFunc func(a *Aura)
 
 // TargetInfo 包含法术目标的命中信息
 type TargetInfo struct {
-	TargetID    uint64
-	MissReason  HitResult
-	EfffectMask uint8
-	Damage      float64
-	Healing     float64
-	Crit        bool
-	TimeDelay   int32 // 命中延迟 (ms), 对齐 TC 的 TargetInfo::TimeDelay
+	TargetID          uint64
+	MissReason        HitResult
+	EfffectMask       uint8
+	Damage            float64
+	Healing           float64
+	Crit              bool
+	TimeDelay         int32 // 命中延迟 (ms), 对齐 TC 的 TargetInfo::TimeDelay
+	Energize          float64
+	EnergizePowerType uint8
 }
 
 // Spell 表示一个法术实例，包含完整的施法状态和数据
@@ -139,6 +141,16 @@ type SpellEngineRef interface {
 	GetTargetUnitsInRadius(center [3]float64, radius float64, excludeID uint64) []targeting.TargetUnit
 	// 调用目标选择脚本钩子
 	CallTargetSelectHook(spellID SpellID, s *Spell, units []targeting.TargetUnit)
+	// 触发法术效果，用于 EffectTriggerSpell，对齐 TC 的 EffectTriggerSpell
+	TriggerSpell(casterID, targetID uint64, spellID SpellID)
+	// 召唤新单位，用于 EffectSummon
+	SummonUnit(casterID uint64, entry int32, pos [3]float64) uint64
+	// 设置单位位置，用于移动效果（Teleport/Leap/Charge/KnockBack）
+	SetUnitPosition(id uint64, x, y, z float64)
+	// 获取单位属性值，用于 HealPct
+	GetUnitStatValue(id uint64, statType uint8) float64
+	// 驱散光环，用于 EffectDispel
+	DispelAuras(targetID uint64, count int32) int
 }
 
 // CasterUnit 是法术需要的最小目标单位接口

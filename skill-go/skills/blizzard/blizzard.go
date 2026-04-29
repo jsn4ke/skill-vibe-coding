@@ -39,3 +39,8 @@ var Info = spellcore.SpellInfo{
 
 // RegisterScripts 对暴风雪是空操作。光环创建和取消清理由效果管线和 Cancel() 自动处理。
 func RegisterScripts(registry *spellcore.Registry, caster *unit.Unit, eng *engine.Engine) {}
+
+// RegisterSpells 将暴风雪的法术注册到配置表中。
+func RegisterSpells(store *spellcore.SpellStore) {
+	store.Register(&Info)
+}

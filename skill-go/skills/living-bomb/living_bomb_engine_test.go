@@ -23,6 +23,7 @@ func runLivingBombEngineTimeline() string {
 	eng.AddUnitWithID(4, entity.NewEntity(4, entity.TypeCreature, entity.Position{X: 12, Y: 1}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 	eng.Simulate(5000, 100)
@@ -90,6 +91,7 @@ func TestLivingBomb_EngineSpreadToNearbyTargets(t *testing.T) {
 	eng.AddUnitWithID(4, entity.NewEntity(4, entity.TypeCreature, entity.Position{X: 12}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 	eng.Simulate(8000, 100)
@@ -111,6 +113,7 @@ func TestLivingBomb_EngineSpreadChainTerminates(t *testing.T) {
 	eng.AddUnitWithID(3, entity.NewEntity(3, entity.TypeCreature, entity.Position{X: 8}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 	eng.Simulate(16000, 100)
@@ -132,6 +135,7 @@ func TestLivingBomb_EngineNoExplosionOnDispel(t *testing.T) {
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 	eng.Simulate(500, 100)
@@ -159,6 +163,7 @@ func TestLivingBomb_EngineNoExplosionOnDeath(t *testing.T) {
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
 	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 	eng.Simulate(500, 100)

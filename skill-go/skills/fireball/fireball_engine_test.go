@@ -22,6 +22,8 @@ func runFireballEngineTimeline() string {
 
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
+	RegisterSpells(eng.SpellStore())
+
 	// Cast fireball — Path C (delayed: CastTime=3500, Speed=20)
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 
@@ -90,6 +92,8 @@ func TestFireball_EngineManaConsumed(t *testing.T) {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
+	RegisterSpells(eng.SpellStore())
+
 	manaBefore := caster.Stats.Get(stat.Mana)
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 	// Drive until cast completes (mana consumed at Cast() time, ~3500ms)
@@ -117,6 +121,7 @@ func TestFireball_EngineAuraProperties(t *testing.T) {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
+	RegisterSpells(eng.SpellStore())
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 
 	// Drive until spell hits + aura is applied
@@ -160,6 +165,7 @@ func TestFireball_EngineMovementCancels(t *testing.T) {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
+	RegisterSpells(eng.SpellStore())
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
 	if s.State != spellcore.StatePreparing {
 		t.Fatalf("expected StatePreparing, got %v", s.State)
@@ -188,6 +194,7 @@ func TestFireball_EngineOutOfRangeCancels(t *testing.T) {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	target := eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
+	RegisterSpells(eng.SpellStore())
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
 	if s.State != spellcore.StatePreparing {
 		t.Fatalf("expected StatePreparing, got %v", s.State)
@@ -215,6 +222,7 @@ func TestFireball_EngineTargetRemovedCancels(t *testing.T) {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
+	RegisterSpells(eng.SpellStore())
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
 
 	// Drive 1 tick

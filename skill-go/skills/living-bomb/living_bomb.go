@@ -136,3 +136,10 @@ func castExplosion(eng *engine.Engine, caster *unit.Unit, carrierTargetID uint64
 		engine.WithSpellValues(map[uint8]float64{2: canSpread}),
 	)
 }
+
+// RegisterSpells 将活体炸弹的所有法术注册到配置表中。
+func RegisterSpells(store *spellcore.SpellStore) {
+	store.Register(&Info)
+	store.Register(&PeriodicInfo)
+	store.Register(&ExplosionInfo)
+}

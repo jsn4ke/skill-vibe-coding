@@ -19,7 +19,7 @@ func runArcaneMissilesEngineTimeline() string {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
-	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
 
@@ -100,7 +100,7 @@ func TestArcaneMissiles_EngineManaConsumed(t *testing.T) {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
-	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	manaBefore := caster.Stats.Get(stat.Mana)
 	eng.CastSpell(caster, &Info, engine.WithTarget(2))
@@ -131,7 +131,7 @@ func TestArcaneMissiles_EngineCancelRemovesAura(t *testing.T) {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
-	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
 
@@ -167,7 +167,7 @@ func TestArcaneMissiles_EngineMovementCancelsChannel(t *testing.T) {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
-	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
 
@@ -198,7 +198,7 @@ func TestArcaneMissiles_EngineTargetDeathCancelsChannel(t *testing.T) {
 	caster.Stats.SetBase(stat.Mana, 1000)
 	target := eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10}), stat.NewStatSet())
 
-	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
 
 	s := eng.CastSpell(caster, &Info, engine.WithTarget(2))
 	if s.State != spellcore.StateChanneling {

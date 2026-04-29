@@ -19,12 +19,13 @@ import (
 // Engine 是模拟引擎，是时间推进的唯一驱动者。
 // 参考：tc-references/unit-update-architecture.md
 type Engine struct {
-	units    map[uint64]*unit.Unit
-	bus      *event.Bus
-	registry *spellcore.Registry
-	auraMgr  *spellcore.AuraManager
-	procMgr  *spellcore.ProcManager
-	renderer *timeline.TimelineRenderer
+	units      map[uint64]*unit.Unit
+	bus        *event.Bus
+	registry   *spellcore.Registry
+	auraMgr    *spellcore.AuraManager
+	procMgr    *spellcore.ProcManager
+	renderer   *timeline.TimelineRenderer
+	spellStore *spellcore.SpellStore
 
 	// currentTime 随每次 Tick 累加的模拟时间
 	currentTime time.Duration
@@ -52,6 +53,7 @@ func New() *Engine {
 		registry:   reg,
 		auraMgr:    auraMgr,
 		procMgr:    spellcore.NewProcManager(),
+		spellStore: spellcore.NewSpellStore(),
 		renderer:   r,
 		nextUnitID: 1,
 	}
@@ -122,6 +124,22 @@ func (e *Engine) Registry() *spellcore.Registry { return e.registry }
 
 // AuraMgr 返回光环管理器。
 func (e *Engine) AuraMgr() *spellcore.AuraManager { return e.auraMgr }
+
+// SpellStore 返回法术配置表，对齐 TC 的 SpellMgr。
+func (e *Engine) SpellStore() *spellcore.SpellStore { return e.spellStore }
+
+// TriggerPeriodicSpell 从配置表查找法术并触发放施，用于 AuraPeriodicTriggerSpell 自动触发。
+func (e *Engine) TriggerPeriodicSpell(casterID, targetID uint64, spellID spellcore.SpellID) {
+	info := e.spellStore.Get(spellID)
+	if info == nil {
+		return
+	}
+	caster := e.GetUnit(casterID)
+	if caster == nil {
+		return
+	}
+	e.CastSpell(caster, info, WithTarget(targetID), WithTriggered())
+}
 
 // ProcMgr 返回触发器管理器。
 func (e *Engine) ProcMgr() *spellcore.ProcManager { return e.procMgr }
@@ -327,6 +345,79 @@ func (e *Engine) CallTargetSelectHook(spellID spellcore.SpellID, s *spellcore.Sp
 	e.registry.CallSpellHook(spellID, spellcore.HookOnTargetSelect, &spellcore.SpellContext{Spell: s, TargetUnits: units})
 }
 
+// TriggerSpell 触发法术效果，用于 EffectTriggerSpell，对齐 TC 的 EffectTriggerSpell。
+// 从 SpellStore 查找法术并以触发模式施放。
+func (e *Engine) TriggerSpell(casterID, targetID uint64, spellID spellcore.SpellID) {
+	info := e.spellStore.Get(spellID)
+	if info == nil {
+		return
+	}
+	caster := e.GetUnit(casterID)
+	if caster == nil {
+		return
+	}
+	e.CastSpell(caster, info, WithTarget(targetID), WithTriggered())
+}
+
+// SummonUnit 召唤一个新单位到指定位置，用于 EffectSummon。
+func (e *Engine) SummonUnit(casterID uint64, entry int32, pos [3]float64) uint64 {
+	e.nextUnitID++
+	id := e.nextUnitID
+	ent := entity.NewEntity(entity.EntityID(id), entity.TypePet, entity.Position{X: pos[0], Y: pos[1], Z: pos[2]})
+	stats := stat.NewStatSet()
+	u := unit.NewUnit(ent, stats, spellcore.NewHistory())
+	u.SetEngine(e)
+	e.units[id] = u
+	return id
+}
+
+// SetUnitPosition 设置单位位置，用于移动效果（Teleport/Leap/Charge/KnockBack）。
+func (e *Engine) SetUnitPosition(id uint64, x, y, z float64) {
+	u := e.GetUnit(id)
+	if u == nil {
+		return
+	}
+	u.SetPosition(entity.Position{X: x, Y: y, Z: z, Facing: u.Entity.Pos.Facing})
+}
+
+// GetUnitStatValue 获取单位属性值，用于 HealPct 等百分比效果。
+func (e *Engine) GetUnitStatValue(id uint64, statType uint8) float64 {
+	u := e.GetUnit(id)
+	if u == nil {
+		return 0
+	}
+	return u.Stats.Get(stat.StatType(statType))
+}
+
+// DispelAuras 驱散目标身上的光环，返回实际驱散的数量，对齐 TC 的 EffectDispel。
+func (e *Engine) DispelAuras(targetID uint64, count int32) int {
+	target := e.GetUnit(targetID)
+	if target == nil {
+		return 0
+	}
+
+	dispelled := 0
+	// 先收集待驱散的光环（避免遍历中修改）
+	var toRemove []*spellcore.Aura
+	for _, a := range target.GetAppliedAuras() {
+		if int32(dispelled) >= count {
+			break
+		}
+		toRemove = append(toRemove, a)
+		dispelled++
+	}
+
+	for _, a := range toRemove {
+		owner := e.GetUnit(a.CasterID)
+		if owner == nil {
+			continue
+		}
+		e.auraMgr.RemoveAuraFromHosts(a, owner, target, spellcore.RemoveByDispel)
+	}
+
+	return dispelled
+}
+
 // auraRemover 将引擎适配为 spellcore.AuraRemover，用于引导法术的光环清理。
 type auraRemover struct {
 	engine *Engine
@@ -387,6 +478,14 @@ func (e *Engine) doDamageAndTriggers(s *spellcore.Spell) {
 			SpellName:  s.Info.Name,
 		}
 		e.settleOneTarget(ctx)
+
+		// 能量结算，对齐 TC 的 Spell::EffectEnergize
+		if ti.Energize != 0 {
+			target := e.GetUnit(ti.TargetID)
+			if target != nil {
+				target.ModifyPower(ti.EnergizePowerType, ti.Energize)
+			}
+		}
 	}
 }
 

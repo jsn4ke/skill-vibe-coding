@@ -42,6 +42,8 @@ type EngineRef interface {
 	ScriptRegistry() *spellcore.Registry
 	// SettlePeriodicDamage 结算光环周期性伤害/治疗，对齐 TC 的 Aura::PeriodicTick → DealDamage
 	SettlePeriodicDamage(sourceID, targetID uint64, spellID uint32, damage, healing float64, isCrit bool, spellName string)
+	// TriggerPeriodicSpell 从配置表查找法术并触发施放，用于 AuraPeriodicTriggerSpell 自动触发
+	TriggerPeriodicSpell(casterID, targetID uint64, spellID spellcore.SpellID)
 }
 
 // NewUnit 创建一个新 Unit，使用指定的实体和属性。
@@ -442,6 +444,10 @@ func (u *Unit) tickSingleAura(a *spellcore.Aura, elapsed time.Duration, sp float
 				}
 				if dmg > 0 || heal > 0 {
 					u.engine.SettlePeriodicDamage(a.CasterID, a.TargetID, uint32(a.SpellID), dmg, heal, false, a.SpellName)
+				}
+				// 对齐 TC 的 Aura::PeriodicTick 中 SPELL_AURA_PERIODIC_TRIGGER_SPELL 自动施放
+				if eff.AuraType == spellcore.AuraPeriodicTriggerSpell && eff.TriggerSpellID != 0 {
+					u.engine.TriggerPeriodicSpell(a.CasterID, a.TargetID, eff.TriggerSpellID)
 				}
 			}
 		}
