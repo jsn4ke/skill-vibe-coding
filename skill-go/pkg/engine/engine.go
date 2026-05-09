@@ -572,8 +572,12 @@ func (e *Engine) settleOneTarget(ctx combat.SettlementContext) {
 	// Proc 触发，对齐 TC 的 ProcSkillsAndAuras
 	attackerProcEvent := combat.BuildProcEvent(ctx)
 	victimProcEvent := combat.BuildVictimProcEvent(ctx)
-	e.procMgr.Check(attackerProcEvent)
-	e.procMgr.Check(victimProcEvent)
+	for _, r := range e.procMgr.Check(attackerProcEvent) {
+		e.TriggerSpell(r.SourceID, r.TargetID, r.TriggeredSpell)
+	}
+	for _, r := range e.procMgr.Check(victimProcEvent) {
+		e.TriggerSpell(r.SourceID, r.TargetID, r.TriggeredSpell)
+	}
 }
 
 // SettlePeriodicDamage 结算光环周期性伤害/治疗，对齐 TC 的 Aura::PeriodicTick → DealDamage。
@@ -587,6 +591,11 @@ func (e *Engine) SettlePeriodicDamage(sourceID, targetID uint64, spellID uint32,
 		IsPeriodic: true,
 		IsCrit:     isCrit,
 		SpellName:  spellName,
+	}
+	// 从目标属性填充减伤参数
+	if target := e.GetUnit(targetID); target != nil {
+		ctx.TargetArmor = target.Stats.Get(stat.Armor)
+		ctx.TargetResistance = target.Stats.Get(stat.Resistance)
 	}
 	e.settleOneTarget(ctx)
 }

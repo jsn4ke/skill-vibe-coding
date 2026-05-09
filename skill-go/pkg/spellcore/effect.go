@@ -304,16 +304,18 @@ func handleApplyAura(ctx *EffectContext) {
 		a.AreaRadius = float64(ei.MiscValue)
 	}
 
-	if ei.AuraPeriod > 0 {
-		a.Effects = append(a.Effects, AuraEffect{
-			EffectIndex:    ei.EffectIndex,
-			AuraType:       auraType,
-			Amount:         ei.BasePoints,
-			BonusCoeff:     ei.BonusCoeff,
-			Period:         time.Duration(ei.AuraPeriod) * time.Millisecond,
-			TriggerSpellID: ei.TriggerSpellID,
-		})
+	// 所有光环都需要 AuraEffect，不仅限于周期性光环
+	ae := AuraEffect{
+		EffectIndex:    ei.EffectIndex,
+		AuraType:       auraType,
+		Amount:         ei.BasePoints,
+		BonusCoeff:     ei.BonusCoeff,
+		TriggerSpellID: ei.TriggerSpellID,
 	}
+	if ei.AuraPeriod > 0 {
+		ae.Period = time.Duration(ei.AuraPeriod) * time.Millisecond
+	}
+	a.Effects = append(a.Effects, ae)
 
 	ctx.AppliedAura = a
 }

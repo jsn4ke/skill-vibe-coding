@@ -317,3 +317,72 @@ func TestSettlement_NoArmorNoResistance_FullDamage(t *testing.T) {
 		t.Errorf("expected full 200 damage with no armor/resistance, got %.0f", damageTaken)
 	}
 }
+
+func TestSettlement_ProcTriggersSpell(t *testing.T) {
+	eng, caster, target := createTestEngine()
+
+	// 注册一个 proc：攻击者造成法术伤害时，100% 触发一个额外伤害法术
+	procDamageSpell := &spellcore.SpellInfo{
+		ID:   500,
+		Name: "ProcDamage",
+		Effects: []spellcore.SpellEffectInfo{
+			{EffectType: spellcore.EffectSchoolDamage, BasePoints: 50, TargetA: spellcore.TargetUnitTargetEnemy},
+		},
+	}
+	eng.SpellStore().Register(procDamageSpell)
+
+	eng.ProcMgr().Register(spellcore.Entry{
+		SpellID:      100,
+		Flags:        spellcore.FlagSpellDamageDealt,
+		Chance:       1.0, // 100%
+		TriggerSpell: spellcore.SpellID(procDamageSpell.ID),
+	})
+
+	// 施放主法术
+	eng.CastSpell(caster, damageSpellInfo(), WithTarget(target.ID()))
+	eng.Simulate(100, 50)
+
+	// 主法术伤害 100 + Proc 伤害 50 = 150 总伤害
+	damageTaken := 1000 - target.Stats.Get(stat.Health)
+	if damageTaken < 140 {
+		t.Errorf("expected ~150 damage (100 main + 50 proc), got %.0f", damageTaken)
+	}
+}
+
+func TestSettlement_AuraModifiesStat(t *testing.T) {
+	eng, caster, _ := createTestEngine()
+
+	// 施加一个增加法术强度的光环
+	buffInfo := &spellcore.SpellInfo{
+		ID:       600,
+		Name:     "SpellPowerBuff",
+		Duration: 5000,
+		Effects: []spellcore.SpellEffectInfo{
+			{
+				EffectType: spellcore.EffectApplyAura,
+				AuraType:   uint16(spellcore.AuraModSpellPower),
+				BasePoints: 200,
+				TargetA:    spellcore.TargetUnitCaster,
+			},
+		},
+	}
+
+	spBefore := caster.Stats.Get(stat.SpellPower)
+	eng.CastSpell(caster, buffInfo, WithTarget(caster.ID()))
+	eng.Simulate(100, 50)
+	spAfter := caster.Stats.Get(stat.SpellPower)
+
+	if spAfter <= spBefore {
+		t.Errorf("expected SpellPower to increase after buff, before=%.0f after=%.0f", spBefore, spAfter)
+	}
+	if spAfter != spBefore+200 {
+		t.Errorf("expected SpellPower to increase by 200, got increase of %.0f", spAfter-spBefore)
+	}
+
+	// 等待光环过期
+	eng.Simulate(6000, 100)
+	spExpired := caster.Stats.Get(stat.SpellPower)
+	if spExpired != spBefore {
+		t.Errorf("expected SpellPower to return to %.0f after expiry, got %.0f", spBefore, spExpired)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"math"
 	"skill-go/pkg/event"
 	"skill-go/pkg/targeting"
+	"time"
 )
 
 // SpellID 是法术的唯一标识符
@@ -119,6 +120,7 @@ type Caster interface {
 	GetStatValue(st uint8) float64
 	ModifyPower(pt uint8, amount float64) bool
 	IsMoving() bool
+	GetHistory() *History
 }
 
 // Position 是位置接口
@@ -151,6 +153,8 @@ type SpellEngineRef interface {
 	GetUnitStatValue(id uint64, statType uint8) float64
 	// 驱散光环，用于 EffectDispel
 	DispelAuras(targetID uint64, count int32) int
+	// 脚本注册中心，用于法术生命周期钩子
+	ScriptRegistry() *Registry
 }
 
 // CasterUnit 是法术需要的最小目标单位接口
@@ -182,11 +186,22 @@ func NewSpell(id SpellID, info *SpellInfo, caster Caster, flags CastFlags) *Spel
 	}
 }
 
+// callHook 调用指定类型的脚本钩子。
+func (s *Spell) callHook(hook Hook) {
+	if s.Engine != nil {
+		if reg := s.Engine.ScriptRegistry(); reg != nil {
+			reg.CallSpellHook(s.ID, hook, &SpellContext{Spell: s})
+		}
+	}
+}
+
 // Prepare 准备施法，验证条件并设置状态
 func (s *Spell) Prepare() SpellCastResult {
 	if result := s.CheckCast(true); result != CastOK {
 		return result
 	}
+
+	s.callHook(HookOnPrepare)
 
 	s.CastTime = s.Info.CastTime
 	s.Timer = int32(s.CastTime)
@@ -366,7 +381,15 @@ func (s *Spell) Cast(skipCheck bool) {
 		}
 	}
 
+	s.callHook(HookBeforeCast)
+
 	s.SelectEffectTargets()
+
+	if s.State == StateFinished {
+		return
+	}
+
+	s.callHook(HookOnCast)
 
 	if s.State == StateFinished {
 		return
@@ -374,6 +397,14 @@ func (s *Spell) Cast(skipCheck bool) {
 
 	if !(s.CastFlags&TriggeredIgnorePower != 0) {
 		s.TakePower()
+	}
+
+	// 施放后应用冷却和 GCD，对齐 TC 的 Spell::cast → AddCooldown + AddGlobalCooldown
+	if s.CastFlags&TriggeredIgnoreCooldown == 0 {
+		s.ApplyCooldown()
+	}
+	if s.CastFlags&TriggeredIgnoreGCD == 0 {
+		s.ApplyGlobalCooldown()
 	}
 
 	// 对齐 TC: LaunchDelay == 0 时立即执行 LaunchPhase，否则推迟到 Update() 中
@@ -432,7 +463,18 @@ func (s *Spell) HandleLaunchPhase() {
 // HandleHitPhase 处理 Hit 阶段（Hit + HitTarget），在 HandleImmediate() / 弹道命中时调用。
 // 对齐 TC _handle_immediate_phase() + DoProcessTargetContainer()。
 func (s *Spell) HandleHitPhase() {
+	s.callHook(HookBeforeHit)
 	ProcessHitPhase(s)
+	// OnHit/OnMiss 按目标分派
+	for i := range s.TargetInfos {
+		ti := &s.TargetInfos[i]
+		if ti.MissReason == HitNormal || ti.MissReason == HitCrit {
+			s.callHook(HookOnHit)
+		} else if ti.MissReason != HitNormal {
+			s.callHook(HookOnMiss)
+		}
+	}
+	s.callHook(HookAfterHit)
 	if s.Bus != nil {
 		for i := range s.TargetInfos {
 			ti := &s.TargetInfos[i]
@@ -531,12 +573,39 @@ func (s *Spell) CheckCast(strict bool) SpellCastResult {
 	if !s.Caster.CanCast() {
 		return CastFailedStunned
 	}
+
+	// GCD 检查，对齐 TC 的 Spell::CheckCast → CheckGlobalCooldown
 	if strict && s.CastFlags&TriggeredIgnoreGCD == 0 {
+		if h := s.Caster.GetHistory(); h != nil {
+			if h.HasGlobalCooldown(s.Info.CategoryID) {
+				return CastFailedCantDoRightNow
+			}
+		}
 	}
+
+	// 冷却就绪检查，对齐 TC 的 Spell::CheckCast → CheckCooldown
 	if s.CastFlags&TriggeredIgnoreCooldown == 0 {
+		if h := s.Caster.GetHistory(); h != nil {
+			if !h.IsReady(s.ID, s.Info.CategoryID) {
+				return CastFailedNotReady
+			}
+		}
 	}
-	if s.CastFlags&TriggeredIgnorePower == 0 {
+
+	// 能量检查，对齐 TC 的 Spell::CheckCast → CheckPower
+	if s.CastFlags&TriggeredIgnorePower == 0 && s.Info.PowerCost > 0 {
+		// PowerType=0 对应 Mana，但 GetStatValue 使用 stat.StatType 映射
+		// Unit.ModifyPower 做了 PowerType→StatType 映射，这里用相同的映射
+		statType := s.Info.PowerType
+		if statType == 0 {
+			statType = 2 // Mana 对应 StatType=2
+		}
+		current := s.Caster.GetStatValue(statType)
+		if current < float64(s.Info.PowerCost) {
+			return CastFailedNoPower
+		}
 	}
+
 	if s.CastFlags&TriggeredIgnoreCasterAuraState == 0 {
 		if !s.Caster.CanCast() {
 			return CastFailedSilenced
@@ -709,6 +778,44 @@ func (s *Spell) TakePower() {
 	if s.Info.PowerCost > 0 {
 		s.Caster.ModifyPower(s.Info.PowerType, -float64(s.Info.PowerCost))
 	}
+}
+
+// ApplyCooldown 为法术添加冷却记录，对齐 TC 的 Spell::cast → AddCooldown。
+func (s *Spell) ApplyCooldown() {
+	if s.Info.CooldownTime == 0 {
+		return
+	}
+	if h := s.Caster.GetHistory(); h != nil {
+		h.AddCooldown(s.ID, s.Info.CategoryID, time.Duration(s.Info.CooldownTime)*time.Millisecond)
+	}
+}
+
+// ApplyGlobalCooldown 为法术分类添加 GCD，对齐 TC 的 Spell::cast → AddGlobalCooldown。
+// CategoryID=0 的法术不参与 GCD 系统。
+func (s *Spell) ApplyGlobalCooldown() {
+	if s.Info.CategoryID == 0 {
+		return
+	}
+	if h := s.Caster.GetHistory(); h != nil {
+		gcdMs := int32(1500)
+		if s.Info.CastTime > 0 {
+			gcdMs = int32(s.Info.CastTime)
+		}
+		h.AddGlobalCooldown(s.Info.CategoryID, time.Duration(gcdMs)*time.Millisecond)
+	}
+}
+
+// Pushback 延长施法时间，对齐 TC 的 Spell::DelaySpell。
+// 每次推条延长基础施法时间的 25%（最小 250ms），最多累计 2 次。
+func (s *Spell) Pushback() {
+	if s.State != StatePreparing || s.Info.CastTime == 0 {
+		return
+	}
+	pushbackMs := int32(float64(s.Info.CastTime) * 0.25)
+	if pushbackMs < 250 {
+		pushbackMs = 250
+	}
+	s.Timer += pushbackMs
 }
 
 // calculateTargetDelays 计算每个目标的命中延迟 (ms)，对齐 TC AddUnitTarget() 中的 TimeDelay 计算。

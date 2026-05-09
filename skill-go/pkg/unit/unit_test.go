@@ -687,3 +687,41 @@ func TestGetTargetPosition_NilEngine(t *testing.T) {
 		t.Fatalf("expected fallback X=5, got %v", pos.GetX())
 	}
 }
+
+func TestUnit_SilenceAuraBlocksCasting(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+	u.Stats.SetBase(stat.Mana, 10000)
+
+	silenceAura := spellcore.NewAura(999, 2, 1, spellcore.AuraModSilence, 5*time.Second)
+	me.auraMgr.ApplyAura(u, u, silenceAura)
+
+	if u.CanCast() {
+		t.Error("expected CanCast=false after silence aura applied")
+	}
+
+	me.auraMgr.RemoveAuraFromHosts(silenceAura, u, u, spellcore.RemoveByDispel)
+
+	if !u.CanCast() {
+		t.Error("expected CanCast=true after silence aura removed")
+	}
+}
+
+func TestUnit_StunAuraBlocksCastAndMove(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	stunAura := spellcore.NewAura(998, 2, 1, spellcore.AuraModStun, 3*time.Second)
+	me.auraMgr.ApplyAura(u, u, stunAura)
+
+	if u.CanCast() {
+		t.Error("expected CanCast=false after stun")
+	}
+	if u.Entity.CanMove() {
+		t.Error("expected CanMove=false after stun")
+	}
+
+	me.auraMgr.RemoveAuraFromHosts(stunAura, u, u, spellcore.RemoveByExpire)
+
+	if !u.CanCast() {
+		t.Error("expected CanCast=true after stun removed")
+	}
+}

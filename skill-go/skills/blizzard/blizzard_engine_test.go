@@ -97,6 +97,46 @@ func TestBlizzard_EngineTickDamage(t *testing.T) {
 	}
 }
 
+func TestBlizzard_EngineAreaTickSettlesDamage(t *testing.T) {
+	eng := engine.New()
+
+	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: 0}), stat.NewStatSet())
+	caster.Stats.SetBase(stat.SpellPower, 100)
+	caster.Stats.SetBase(stat.Mana, 1000)
+
+	// Two enemies within Blizzard area (center=10,0,0 radius=8)
+	target1 := eng.AddUnitWithID(2, entity.NewEntity(2, entity.TypeCreature, entity.Position{X: 10, Y: 0}), stat.NewStatSet())
+	target1.Stats.SetBase(stat.Health, 1000)
+	target2 := eng.AddUnitWithID(3, entity.NewEntity(3, entity.TypeCreature, entity.Position{X: 12, Y: 1}), stat.NewStatSet())
+	target2.Stats.SetBase(stat.Health, 1000)
+
+	RegisterScripts(eng.Registry(), caster, eng)
+	RegisterSpells(eng.SpellStore())
+
+	eng.CastSpell(caster, &Info, engine.WithDestPos(10, 0, 0))
+
+	// Record health before ticks start
+	hp1Before := target1.Stats.Get(stat.Health)
+	hp2Before := target2.Stats.Get(stat.Health)
+
+	// Drive until aura expires (8s duration + buffer)
+	eng.Simulate(10000, 100)
+
+	hp1After := target1.Stats.Get(stat.Health)
+	hp2After := target2.Stats.Get(stat.Health)
+
+	// Each tick = 25 + 0.042*100 = 29.2 damage, 8 ticks, total = 233.6 per target
+	damagePerTick := 25.0 + 0.042*100.0
+	totalExpected := damagePerTick * 8.0
+
+	if hp1Before-hp1After < totalExpected-1 {
+		t.Errorf("target1: expected ~%.1f total damage, got %.1f", totalExpected, hp1Before-hp1After)
+	}
+	if hp2Before-hp2After < totalExpected-1 {
+		t.Errorf("target2: expected ~%.1f total damage, got %.1f", totalExpected, hp2Before-hp2After)
+	}
+}
+
 func TestBlizzard_EngineManaConsumed(t *testing.T) {
 	eng := engine.New()
 	caster := eng.AddUnitWithID(1, entity.NewEntity(1, entity.TypePlayer, entity.Position{X: 0}), stat.NewStatSet())

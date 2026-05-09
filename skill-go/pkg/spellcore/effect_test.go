@@ -199,6 +199,7 @@ func (c *mockCaster) GetTargetPosition(uint64) Position         { return c.pos }
 func (c *mockCaster) GetStatValue(st uint8) float64             { return 0 }
 func (c *mockCaster) ModifyPower(pt uint8, amount float64) bool { return true }
 func (c *mockCaster) IsMoving() bool                            { return c.moving }
+func (c *mockCaster) GetHistory() *History                      { return nil }
 
 type mockPosition struct{ x, y, z, facing float64 }
 

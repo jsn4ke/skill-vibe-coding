@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"fmt"
 	"skill-go/pkg/entity"
 	"skill-go/pkg/event"
 	"skill-go/pkg/spellcore"
@@ -86,10 +87,97 @@ func (u *Unit) Update(diff int32) {
 
 // --- spellcore.Caster 接口实现 ---
 
-func (u *Unit) GetID() uint64  { return u.ID() }
-func (u *Unit) IsAlive() bool  { return u.Entity.IsAlive() }
-func (u *Unit) CanCast() bool  { return u.Entity.CanCast() }
-func (u *Unit) IsMoving() bool { return u.isMoving }
+func (u *Unit) GetID() uint64                  { return u.ID() }
+func (u *Unit) IsAlive() bool                  { return u.Entity.IsAlive() }
+func (u *Unit) CanCast() bool                  { return u.Entity.CanCast() }
+func (u *Unit) IsMoving() bool                 { return u.isMoving }
+func (u *Unit) GetHistory() *spellcore.History { return u.History }
+
+// ApplyAuraEffects 在光环施加时应用属性修改和 CC 状态，对齐 TC 的 Aura::Apply。
+func (u *Unit) ApplyAuraEffects(a *spellcore.Aura) {
+	// 检查光环主类型（直接通过 NewAura 创建的光环可能没有 Effects）
+	if flag := ccStateFlag(a.AuraType); flag != 0 {
+		u.Entity.State = u.Entity.State.Set(flag)
+	}
+
+	for _, eff := range a.Effects {
+		st := auraEffectStat(eff)
+		if st != nil {
+			source := fmt.Sprintf("aura:%d:%d", a.SpellID, a.ID)
+			u.Stats.AddModifier(*st, stat.Modifier{Flat: eff.Amount, Source: source})
+		}
+		if flag := ccStateFlag(eff.AuraType); flag != 0 {
+			u.Entity.State = u.Entity.State.Set(flag)
+		}
+	}
+}
+
+// RemoveAuraEffects 在光环移除时撤销属性修改和 CC 状态，对齐 TC 的 Aura::Remove。
+func (u *Unit) RemoveAuraEffects(a *spellcore.Aura) {
+	if flag := ccStateFlag(a.AuraType); flag != 0 {
+		u.Entity.State = u.Entity.State.Clear(flag)
+	}
+
+	for _, eff := range a.Effects {
+		st := auraEffectStat(eff)
+		if st != nil {
+			source := fmt.Sprintf("aura:%d:%d", a.SpellID, a.ID)
+			u.Stats.RemoveModifierBySource(*st, source)
+		}
+		if flag := ccStateFlag(eff.AuraType); flag != 0 {
+			u.Entity.State = u.Entity.State.Clear(flag)
+		}
+	}
+}
+
+// ccStateFlag 返回光环类型对应的 UnitState 标志，对齐 TC 的 AuraType → UnitState 映射。
+func ccStateFlag(auraType spellcore.AuraType) entity.UnitState {
+	switch auraType {
+	case spellcore.AuraModStun:
+		return entity.StateStunned
+	case spellcore.AuraModRoot:
+		return entity.StateRooted
+	case spellcore.AuraModSilence:
+		return entity.StateSilenced
+	case spellcore.AuraModFear:
+		return entity.StateFeared
+	case spellcore.AuraModConfuse:
+		return entity.StateConfused
+	case spellcore.AuraModCharm:
+		return entity.StateCharmed
+	case spellcore.AuraModPacify:
+		return entity.StatePacified
+	case spellcore.AuraModStealth:
+		return entity.StateStealthed
+	default:
+		return 0
+	}
+}
+
+// auraEffectStat 返回光环效果对应的属性类型，对齐 TC 的 AuraEffect::GetModifier。
+func auraEffectStat(eff spellcore.AuraEffect) *stat.StatType {
+	switch eff.AuraType {
+	case spellcore.AuraModStat:
+		return nil // 需要更多信息，暂不支持通用属性修改
+	case spellcore.AuraModAttackPower:
+		st := stat.AttackPower
+		return &st
+	case spellcore.AuraModSpellPower:
+		st := stat.SpellPower
+		return &st
+	case spellcore.AuraModResistance:
+		st := stat.Resistance
+		return &st
+	case spellcore.AuraModCritChance:
+		st := stat.CritChance
+		return &st
+	case spellcore.AuraModHaste:
+		st := stat.Haste
+		return &st
+	default:
+		return nil
+	}
+}
 
 // SetPosition 更新单位位置。移动检测在 Update() 中进行。
 func (u *Unit) SetPosition(pos entity.Position) {
@@ -491,31 +579,20 @@ func (u *Unit) tickAreaAura(a *spellcore.Aura, elapsed time.Duration, sp float64
 							Amount:   amount,
 						})
 					}
-				}
-			}
-		}
-	}
-}
-
-// removeAuraFromBoth 从拥有者和目标两端移除光环。
-// 这是集中化的移除路径，确保一致性。
-func (u *Unit) removeAuraFromBoth(a *spellcore.Aura, mode spellcore.RemoveMode) {
-	// 从此单位的拥有列表移除
-	for i, owned := range u.ownedAuras {
-		if owned.ID == a.ID {
-			u.ownedAuras = append(u.ownedAuras[:i], u.ownedAuras[i+1:]...)
-			break
-		}
-	}
-
-	// 从目标的施加列表移除
-	if u.engine != nil {
-		target := u.engine.GetUnit(a.TargetID)
-		if target != nil {
-			for i, applied := range target.appliedAuras {
-				if applied.ID == a.ID {
-					target.appliedAuras = append(target.appliedAuras[:i], target.appliedAuras[i+1:]...)
-					break
+					// Settlement for area aura ticks
+					dmg := 0.0
+					heal := 0.0
+					if eff.AuraType == spellcore.AuraPeriodicDamage {
+						dmg = amount
+					} else if eff.AuraType == spellcore.AuraPeriodicHeal {
+						heal = amount
+					}
+					if dmg > 0 || heal > 0 {
+						u.engine.SettlePeriodicDamage(a.CasterID, t.ID(), uint32(a.SpellID), dmg, heal, false, a.SpellName)
+					}
+					if eff.AuraType == spellcore.AuraPeriodicTriggerSpell && eff.TriggerSpellID != 0 {
+						u.engine.TriggerPeriodicSpell(a.CasterID, t.ID(), eff.TriggerSpellID)
+					}
 				}
 			}
 		}

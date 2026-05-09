@@ -120,6 +120,8 @@ func (h *mockAuraHost) FindAppliedAura(spellID SpellID, casterID uint64) *Aura {
 	}
 	return nil
 }
+func (h *mockAuraHost) ApplyAuraEffects(_ *Aura)  {}
+func (h *mockAuraHost) RemoveAuraEffects(_ *Aura) {}
 
 func TestAuraManager_ApplyAura_New(t *testing.T) {
 	mgr := NewAuraManager(nil)

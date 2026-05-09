@@ -32,7 +32,7 @@ type testUnit struct {
 }
 
 func newTestUnit(id uint64) *testUnit {
-	return &testUnit{
+	u := &testUnit{
 		id:      id,
 		alive:   true,
 		canCast: true,
@@ -40,6 +40,8 @@ func newTestUnit(id uint64) *testUnit {
 		targets: make(map[uint64]testPos),
 		stats:   stat.NewStatSet(),
 	}
+	u.stats.SetBase(stat.Mana, 10000)
+	return u
 }
 
 func (u *testUnit) GetID() uint64                   { return u.id }
@@ -47,6 +49,7 @@ func (u *testUnit) IsAlive() bool                   { return u.alive }
 func (u *testUnit) CanCast() bool                   { return u.canCast }
 func (u *testUnit) GetPosition() spellcore.Position { return u.pos }
 func (u *testUnit) IsMoving() bool                  { return u.moving }
+func (u *testUnit) GetHistory() *spellcore.History  { return nil }
 func (u *testUnit) ModifyPower(_ uint8, amt float64) bool {
 	u.power += amt
 	return true
@@ -398,3 +401,89 @@ func TestFireball_AppliesDoTAura(t *testing.T) {
 		t.Errorf("aura period = %v, want 3000ms", appliedAura.Effects[0].Period)
 	}
 }
+
+// --- CheckCast validation tests ---
+
+func TestCheckCast_NoPower(t *testing.T) {
+	info := spellcore.SpellInfo{
+		ID:        900,
+		Name:      "ExpensiveSpell",
+		PowerCost: 500,
+		PowerType: 0,
+		Effects:   []spellcore.SpellEffectInfo{{EffectType: spellcore.EffectSchoolDamage, BasePoints: 100}},
+	}
+	caster := newTestUnit(1)
+	caster.stats.SetBase(stat.Mana, 100) // not enough
+
+	s := spellcore.NewSpell(spellcore.SpellID(info.ID), &info, caster, spellcore.TriggeredNone)
+	result := s.CheckCast(true)
+	if result != spellcore.CastFailedNoPower {
+		t.Errorf("expected CastFailedNoPower, got %d", result)
+	}
+}
+
+func TestCheckCast_EnoughPower(t *testing.T) {
+	info := spellcore.SpellInfo{
+		ID:        901,
+		Name:      "CheapSpell",
+		PowerCost: 50,
+		PowerType: 0,
+		Effects:   []spellcore.SpellEffectInfo{{EffectType: spellcore.EffectSchoolDamage, BasePoints: 100}},
+	}
+	caster := newTestUnit(1)
+
+	s := spellcore.NewSpell(spellcore.SpellID(info.ID), &info, caster, spellcore.TriggeredNone)
+	result := s.CheckCast(true)
+	if result != spellcore.CastOK {
+		t.Errorf("expected CastOK, got %d", result)
+	}
+}
+
+func TestCheckCast_CooldownNotReady(t *testing.T) {
+	info := spellcore.SpellInfo{
+		ID:           902,
+		Name:         "CooldownSpell",
+		CooldownTime: 5000,
+		PowerCost:    0,
+		Effects:      []spellcore.SpellEffectInfo{{EffectType: spellcore.EffectSchoolDamage, BasePoints: 100}},
+	}
+	caster := newTestUnit(1)
+	h := spellcore.NewHistory()
+	h.AddCooldown(spellcore.SpellID(902), 0, 5*time.Second)
+
+	// override history via a wrapper
+	casterWithHistory := &historyCaster{testUnit: caster, history: h}
+	s := spellcore.NewSpell(spellcore.SpellID(info.ID), &info, casterWithHistory, spellcore.TriggeredNone)
+	result := s.CheckCast(false)
+	if result != spellcore.CastFailedNotReady {
+		t.Errorf("expected CastFailedNotReady, got %d", result)
+	}
+}
+
+func TestCheckCast_TriggeredIgnoresAll(t *testing.T) {
+	info := spellcore.SpellInfo{
+		ID:           903,
+		Name:         "TriggeredSpell",
+		CooldownTime: 5000,
+		PowerCost:    500,
+		PowerType:    0,
+		CategoryID:   1,
+		Effects:      []spellcore.SpellEffectInfo{{EffectType: spellcore.EffectSchoolDamage, BasePoints: 100}},
+	}
+	caster := newTestUnit(1)
+	caster.stats.SetBase(stat.Mana, 0) // no mana
+
+	s := spellcore.NewSpell(spellcore.SpellID(info.ID), &info, caster, spellcore.TriggeredFullMask)
+	result := s.CheckCast(true)
+	if result != spellcore.CastOK {
+		t.Errorf("expected CastOK for triggered spell, got %d", result)
+	}
+}
+
+// historyCaster wraps testUnit to provide a real History
+type historyCaster struct {
+	*testUnit
+	history *spellcore.History
+}
+
+func (h *historyCaster) GetHistory() *spellcore.History { return h.history }

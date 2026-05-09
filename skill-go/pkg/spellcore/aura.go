@@ -18,6 +18,10 @@ type AuraHost interface {
 	RemoveAppliedAura(idx int)
 	GetAppliedAuras() []*Aura
 	FindAppliedAura(spellID SpellID, casterID uint64) *Aura
+	// ApplyAuraEffects 在光环施加时应用属性修改，由 Unit 实现
+	ApplyAuraEffects(a *Aura)
+	// RemoveAuraEffects 在光环移除时撤销属性修改，由 Unit 实现
+	RemoveAuraEffects(a *Aura)
 }
 
 // AuraType 表示光环类型的枚举。
@@ -89,9 +93,6 @@ type Aura struct {
 	StackAmount    uint8
 	MaxStack       uint8
 	StackRule      StackRule
-	Charges        int32
-	ProcChance     float64
-	PPM            float64
 	Effects        []AuraEffect
 	AppliedAt      time.Time
 	Elapsed        time.Duration
@@ -114,14 +115,6 @@ type AuraEffect struct {
 	TicksDone      uint32
 	MiscValue      int32
 	TriggerSpellID SpellID
-}
-
-// AuraApplication 表示光环的应用记录。
-type AuraApplication struct {
-	Aura       *Aura
-	TargetID   uint64
-	Flags      uint8
-	EffectMask uint8
 }
 
 // NewAura 创建一个新的光环。
@@ -301,6 +294,9 @@ func (m *AuraManager) ApplyAura(owner, target AuraHost, a *Aura) {
 	owner.AddOwnedAura(a)
 	target.AddAppliedAura(a)
 
+	// 目标端应用光环效果（属性修改等）
+	target.ApplyAuraEffects(a)
+
 	// 脚本钩子
 	if m.registry != nil {
 		m.registry.CallAuraHook(a.SpellID, AuraHookAfterApply, &AuraContext{
@@ -325,6 +321,9 @@ func (m *AuraManager) ApplyAura(owner, target AuraHost, a *Aura) {
 
 // RemoveAuraFromHosts 从拥有者和目标两端移除光环。
 func (m *AuraManager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode RemoveMode) {
+	// 目标端撤销光环效果（属性修改等）
+	target.RemoveAuraEffects(a)
+
 	// 脚本钩子
 	if m.registry != nil {
 		m.registry.CallAuraHook(a.SpellID, AuraHookAfterRemove, &AuraContext{

@@ -79,7 +79,6 @@ type SpellEffectInfo struct {
 	EffectType         EffectType
 	BasePoints         float64
 	BaseDieSides       float64
-	RealPtsPerLvl      float64
 	BonusCoeff         float64
 	MiscValue          int32
 	TriggerSpellID     SpellID
