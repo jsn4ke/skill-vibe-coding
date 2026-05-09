@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"skill-go/pkg/combat"
 	"skill-go/pkg/entity"
 	"skill-go/pkg/event"
 	"skill-go/pkg/spellcore"
@@ -232,5 +233,87 @@ func TestSettlement_DamageToDeadUnitIgnored(t *testing.T) {
 	healthAfter := target.Stats.Get(stat.Health)
 	if healthAfter != healthBefore {
 		t.Errorf("expected no damage to dead unit, before=%.0f after=%.0f", healthBefore, healthAfter)
+	}
+}
+
+func TestSettlement_ArmorReducesPhysicalDamage(t *testing.T) {
+	eng, caster, target := createTestEngine()
+
+	// 给目标设置护甲
+	target.Stats.SetBase(stat.Armor, 1000)
+
+	// 物理伤害法术（School 默认 0 = Physical）
+	info := &spellcore.SpellInfo{
+		ID:     102,
+		Name:   "PhysicalHit",
+		School: uint8(combat.SchoolPhysical),
+		Effects: []spellcore.SpellEffectInfo{
+			{EffectType: spellcore.EffectSchoolDamage, BasePoints: 1000, TargetA: spellcore.TargetUnitTargetEnemy},
+		},
+	}
+
+	eng.CastSpell(caster, info, WithTarget(target.ID()))
+	eng.Simulate(100, 50)
+
+	damageTaken := 1000 - target.Stats.Get(stat.Health)
+	// 无护甲时 damageTaken = 1000，有护甲 1000 时 damageTaken < 1000
+	if damageTaken >= 1000 {
+		t.Errorf("expected armor to reduce damage, but took %.0f damage", damageTaken)
+	}
+	// 验证减伤公式：1000 * armor/(armor+467.5) = 1000 * 1000/1467.5 ≈ 681.4
+	// 实际伤害 = 1000 - 681.4 ≈ 318.6
+	if damageTaken < 300 || damageTaken > 350 {
+		t.Errorf("expected ~318 damage after armor, got %.0f", damageTaken)
+	}
+}
+
+func TestSettlement_ResistanceReducesMagicDamage(t *testing.T) {
+	eng, caster, target := createTestEngine()
+
+	// 给目标设置抗性
+	target.Stats.SetBase(stat.Resistance, 300)
+
+	// 火焰伤害法术
+	info := &spellcore.SpellInfo{
+		ID:     103,
+		Name:   "Fireball",
+		School: uint8(combat.SchoolFire),
+		Effects: []spellcore.SpellEffectInfo{
+			{EffectType: spellcore.EffectSchoolDamage, BasePoints: 1000, TargetA: spellcore.TargetUnitTargetEnemy},
+		},
+	}
+
+	eng.CastSpell(caster, info, WithTarget(target.ID()))
+	eng.Simulate(100, 50)
+
+	damageTaken := 1000 - target.Stats.Get(stat.Health)
+	// 无抗性时 damageTaken = 1000，有抗性时 damageTaken < 1000
+	if damageTaken >= 1000 {
+		t.Errorf("expected resistance to reduce damage, but took %.0f damage", damageTaken)
+	}
+	// 减伤公式：1000 * (1 - 300/450) ≈ 333
+	if damageTaken < 320 || damageTaken > 345 {
+		t.Errorf("expected ~333 damage after resistance, got %.0f", damageTaken)
+	}
+}
+
+func TestSettlement_NoArmorNoResistance_FullDamage(t *testing.T) {
+	eng, caster, target := createTestEngine()
+
+	info := &spellcore.SpellInfo{
+		ID:     104,
+		Name:   "Fireball",
+		School: uint8(combat.SchoolFire),
+		Effects: []spellcore.SpellEffectInfo{
+			{EffectType: spellcore.EffectSchoolDamage, BasePoints: 200, TargetA: spellcore.TargetUnitTargetEnemy},
+		},
+	}
+
+	eng.CastSpell(caster, info, WithTarget(target.ID()))
+	eng.Simulate(100, 50)
+
+	damageTaken := 1000 - target.Stats.Get(stat.Health)
+	if damageTaken != 200 {
+		t.Errorf("expected full 200 damage with no armor/resistance, got %.0f", damageTaken)
 	}
 }

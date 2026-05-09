@@ -58,6 +58,7 @@ type SpellInfo struct {
 	Speed          float64
 	MinDuration    uint32
 	IsChanneled    bool
+	School         uint8 // 法术学校，对应 combat.DamageSchool 枚举
 	Attributes     SpellAttribute
 	InterruptFlags SpellInterruptFlags
 	Effects        []SpellEffectInfo

@@ -94,10 +94,11 @@ Read the identified core files. Extract and organize into four sections:
 - Elevate to general game development patterns
 - State applicability: when this pattern fits and when it doesn't
 
-### Step 5: Output and Store
+### Step 5: Save Then Present
 
-1. Present the analysis to the user
-2. Save to `tc-references/<topic-slug>.md` with a header:
+**必须先保存再呈现。禁止先呈现后保存。**
+
+1. 用 Write 工具将分析保存到 `tc-references/<topic-slug>.md`，包含以下 header：
 
 ```markdown
 # <Topic>
@@ -106,6 +107,10 @@ Read the identified core files. Extract and organize into four sections:
 
 <four sections>
 ```
+
+2. **保存成功后**，向用户呈现分析摘要。验证文件已写入（Write 工具无报错即可）。
+
+**为什么要先保存：** "先呈现后保存"是已确认的失败模式——LLM 在呈现分析后倾向于认为任务完成，跳过保存步骤。先保存再呈现消除了这个风险。
 
 ## Constraints
 

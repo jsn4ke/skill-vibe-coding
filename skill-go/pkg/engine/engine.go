@@ -482,6 +482,12 @@ func (e *Engine) doDamageAndTriggers(s *spellcore.Spell) {
 				IsPeriodic: false,
 				IsCrit:     ti.Crit,
 				SpellName:  s.Info.Name,
+				School:     combat.DamageSchool(s.Info.School),
+			}
+			// 从目标属性填充减伤/吸收参数
+			if target := e.GetUnit(ti.TargetID); target != nil {
+				ctx.TargetArmor = target.Stats.Get(stat.Armor)
+				ctx.TargetResistance = target.Stats.Get(stat.Resistance)
 			}
 			e.settleOneTarget(ctx)
 		}
@@ -505,7 +511,12 @@ func (e *Engine) settleOneTarget(ctx combat.SettlementContext) {
 
 	// 伤害结算，对齐 TC 的 DealSpellDamage → DealDamage
 	if ctx.Damage > 0 {
-		actualDelta := target.ModifyHealth(-ctx.Damage)
+		// 减伤计算：护甲/抗性 → 吸收 → 最终伤害
+		mitigated := combat.MitigateDamage(ctx.Damage, ctx.TargetArmor, ctx.TargetResistance, ctx.School)
+		absorbResult := combat.ApplyAbsorb(mitigated, ctx.TargetAbsorb)
+		finalDamage := absorbResult.RemainingDamage
+
+		actualDelta := target.ModifyHealth(-finalDamage)
 
 		// 受伤打断光环，对齐 TC 的 RemoveAurasWithInterruptFlags(Damage)
 		if actualDelta < 0 {
