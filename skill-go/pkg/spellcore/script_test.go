@@ -62,7 +62,7 @@ func TestRegistry_UnregisteredHook(t *testing.T) {
 	r := NewRegistry()
 	// Should not panic
 	r.CallSpellHook(SpellID(999), HookOnCast, &SpellContext{})
-	r.CallAuraHook(SpellID(999), AuraHookOnApply, &AuraContext{})
+	r.CallAuraHook(SpellID(999), AuraHookAfterApply, &AuraContext{})
 }
 
 func TestRegistry_UnregisterAll(t *testing.T) {
@@ -70,14 +70,14 @@ func TestRegistry_UnregisterAll(t *testing.T) {
 	spellID := SpellID(50)
 
 	r.RegisterSpellHook(spellID, HookOnCast, func(ctx *SpellContext) {})
-	r.RegisterAuraHook(spellID, AuraHookOnApply, func(ctx *AuraContext) {})
+	r.RegisterAuraHook(spellID, AuraHookAfterApply, func(ctx *AuraContext) {})
 
 	r.UnregisterAll(spellID)
 
 	if r.HasSpellHook(spellID, HookOnCast) {
 		t.Error("spell hook should be removed after UnregisterAll")
 	}
-	if r.HasAuraHook(spellID, AuraHookOnApply) {
+	if r.HasAuraHook(spellID, AuraHookAfterApply) {
 		t.Error("aura hook should be removed after UnregisterAll")
 	}
 }

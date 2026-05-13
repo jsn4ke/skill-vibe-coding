@@ -38,10 +38,10 @@ func TestBus_UnsubscribeAll(t *testing.T) {
 	bus := NewBus()
 	count := 0
 
-	bus.Subscribe(OnSpellCast, func(e Event) { count++ })
-	bus.UnsubscribeAll(OnSpellCast)
+	bus.Subscribe(OnSpellHit, func(e Event) { count++ })
+	bus.UnsubscribeAll(OnSpellHit)
 
-	bus.Publish(Event{Type: OnSpellCast})
+	bus.Publish(Event{Type: OnSpellHit})
 	if count != 0 {
 		t.Errorf("expected 0 after unsubscribe, got %d", count)
 	}
@@ -49,5 +49,5 @@ func TestBus_UnsubscribeAll(t *testing.T) {
 
 func TestBus_PublishNoSubscribers(t *testing.T) {
 	bus := NewBus()
-	bus.Publish(Event{Type: OnKill}) // should not panic
+	bus.Publish(Event{Type: OnDamageDealt}) // should not panic
 }

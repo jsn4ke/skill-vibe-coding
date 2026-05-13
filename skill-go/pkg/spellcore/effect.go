@@ -3,6 +3,7 @@ package spellcore
 import (
 	"math"
 	"math/rand"
+	"skill-go/pkg/stat"
 	"time"
 )
 
@@ -68,7 +69,7 @@ func ProcessLaunchPhase(s *Spell) {
 	if s.Info == nil {
 		return
 	}
-	sp := s.Caster.GetStatValue(uint8(4)) // stat.SpellPower = 4
+	sp := s.Caster.GetStatValue(uint8(stat.SpellPower))
 	casterID := s.Caster.GetID()
 
 	// 阶段 1: Launch（无目标），对齐 TC HandleLaunchPhase 的 LAUNCH 部分
@@ -119,7 +120,7 @@ func ProcessHitPhase(s *Spell) {
 	if s.Info == nil {
 		return
 	}
-	sp := s.Caster.GetStatValue(uint8(4)) // stat.SpellPower = 4
+	sp := s.Caster.GetStatValue(uint8(stat.SpellPower))
 	casterID := s.Caster.GetID()
 
 	// 阶段 3: Hit（无目标），对齐 TC _handle_immediate_phase 的 HIT 部分
@@ -236,7 +237,7 @@ func handleHealPct(ctx *EffectContext) {
 	pct := ctx.EffectInfo.BasePoints / 100.0
 	maxHealth := 0.0
 	if ctx.Spell.Engine != nil {
-		maxHealth = ctx.Spell.Engine.GetUnitStatValue(ctx.TargetID, 1) // stat.MaxHealth = 1
+		maxHealth = ctx.Spell.Engine.GetUnitStatValue(ctx.TargetID, uint8(stat.MaxHealth))
 	}
 
 	if maxHealth > 0 {
@@ -374,7 +375,7 @@ func handleWeaponDamage(ctx *EffectContext) {
 		variance = rand.Float64() * ei.BaseDieSides
 	}
 	// BonusCoeff 缩放攻击强度，对齐 TC 的 AP normalization
-	apScaling := ei.BonusCoeff * ctx.Spell.Caster.GetStatValue(uint8(3)) // stat.AttackPower = 3
+	apScaling := ei.BonusCoeff * ctx.Spell.Caster.GetStatValue(uint8(stat.AttackPower))
 
 	ctx.BaseDamage = base + variance
 	ctx.FinalDamage = ctx.BaseDamage + apScaling

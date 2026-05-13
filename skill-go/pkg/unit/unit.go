@@ -36,7 +36,7 @@ type Unit struct {
 type EngineRef interface {
 	GetUnit(id uint64) *Unit
 	GetUnitsInRadius(center [3]float64, radius float64, excludeID uint64) []*Unit
-	GetBus() interface{}
+	GetBus() *event.Bus
 	GetSpellPower(casterID uint64) float64
 	Tick() time.Duration
 	AuraMgr() *spellcore.AuraManager
@@ -572,34 +572,8 @@ func (u *Unit) tickSingleAura(a *spellcore.Aura, elapsed time.Duration, sp float
 				})
 			}
 
-			// Registry hook for periodic ticks
-			if u.engine != nil {
-				if reg := u.engine.ScriptRegistry(); reg != nil {
-					reg.CallAuraHook(a.SpellID, spellcore.AuraHookOnPeriodic, &spellcore.AuraContext{
-						SpellID:  a.SpellID,
-						TargetID: a.TargetID,
-						CasterID: a.CasterID,
-						Amount:   amount,
-					})
-				}
-			}
-			// 通过引擎结算周期性伤害/治疗，对齐 TC 的 Aura::PeriodicTick → DealDamage
-			if u.engine != nil {
-				dmg := 0.0
-				heal := 0.0
-				if eff.AuraType == spellcore.AuraPeriodicDamage {
-					dmg = amount
-				} else if eff.AuraType == spellcore.AuraPeriodicHeal {
-					heal = amount
-				}
-				if dmg > 0 || heal > 0 {
-					u.engine.SettlePeriodicDamage(a.CasterID, a.TargetID, uint32(a.SpellID), dmg, heal, false, a.SpellName)
-				}
-				// 对齐 TC 的 Aura::PeriodicTick 中 SPELL_AURA_PERIODIC_TRIGGER_SPELL 自动施放
-				if eff.AuraType == spellcore.AuraPeriodicTriggerSpell && eff.TriggerSpellID != 0 {
-					u.engine.TriggerPeriodicSpell(a.CasterID, a.TargetID, eff.TriggerSpellID)
-				}
-			}
+			//// Registry hook for periodic ticks
+			u.dispatchPeriodicTick(a, eff, amount, a.TargetID)
 		}
 	}
 }
@@ -642,31 +616,40 @@ func (u *Unit) tickAreaAura(a *spellcore.Aura, elapsed time.Duration, sp float64
 				}
 
 				// 注册中心钩子：周期 tick（区域光环按目标）
-				if u.engine != nil {
-					if reg := u.engine.ScriptRegistry(); reg != nil {
-						reg.CallAuraHook(a.SpellID, spellcore.AuraHookOnPeriodic, &spellcore.AuraContext{
-							SpellID:  a.SpellID,
-							TargetID: app.TargetID,
-							CasterID: a.CasterID,
-							Amount:   amount,
-						})
-					}
-					dmg := 0.0
-					heal := 0.0
-					if eff.AuraType == spellcore.AuraPeriodicDamage {
-						dmg = amount
-					} else if eff.AuraType == spellcore.AuraPeriodicHeal {
-						heal = amount
-					}
-					if dmg > 0 || heal > 0 {
-						u.engine.SettlePeriodicDamage(a.CasterID, app.TargetID, uint32(a.SpellID), dmg, heal, false, a.SpellName)
-					}
-					if eff.AuraType == spellcore.AuraPeriodicTriggerSpell && eff.TriggerSpellID != 0 {
-						u.engine.TriggerPeriodicSpell(a.CasterID, app.TargetID, eff.TriggerSpellID)
-					}
-				}
+				u.dispatchPeriodicTick(a, eff, amount, app.TargetID)
 			}
 		}
+	}
+}
+
+// dispatchPeriodicTick 结算光环周期 tick 的伤害/治疗/触发，对齐 TC 的 Aura::PeriodicTick。
+func (u *Unit) dispatchPeriodicTick(a *spellcore.Aura, eff *spellcore.AuraEffect, amount float64, targetID uint64) {
+	if u.engine == nil {
+		return
+	}
+	// Registry hook for periodic ticks
+	if reg := u.engine.ScriptRegistry(); reg != nil {
+		reg.CallAuraHook(a.SpellID, spellcore.AuraHookOnPeriodic, &spellcore.AuraContext{
+			SpellID:  a.SpellID,
+			TargetID: targetID,
+			CasterID: a.CasterID,
+			Amount:   amount,
+		})
+	}
+	// 通过引擎结算周期性伤害/治疗，对齐 TC 的 Aura::PeriodicTick → DealDamage
+	dmg := 0.0
+	heal := 0.0
+	if eff.AuraType == spellcore.AuraPeriodicDamage {
+		dmg = amount
+	} else if eff.AuraType == spellcore.AuraPeriodicHeal {
+		heal = amount
+	}
+	if dmg > 0 || heal > 0 {
+		u.engine.SettlePeriodicDamage(a.CasterID, targetID, uint32(a.SpellID), dmg, heal, false, a.SpellName)
+	}
+	// 对齐 TC 的 Aura::PeriodicTick 中 SPELL_AURA_PERIODIC_TRIGGER_SPELL 自动施放
+	if eff.AuraType == spellcore.AuraPeriodicTriggerSpell && eff.TriggerSpellID != 0 {
+		u.engine.TriggerPeriodicSpell(a.CasterID, targetID, eff.TriggerSpellID)
 	}
 }
 
@@ -674,10 +657,7 @@ func (u *Unit) getBus() *event.Bus {
 	if u.engine == nil {
 		return nil
 	}
-	if bus, ok := u.engine.GetBus().(*event.Bus); ok {
-		return bus
-	}
-	return nil
+	return u.engine.GetBus()
 }
 
 // entityPos 将 entity.Position 适配为 spellcore.Position 接口。

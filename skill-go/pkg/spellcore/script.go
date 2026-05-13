@@ -17,7 +17,6 @@ const (
 	HookOnEffectLaunch
 	HookOnEffectLaunchTarget
 	HookBeforeCast
-	HookAfterCast
 	HookBeforeHit
 	HookAfterHit
 	HookOnSpellLaunch
@@ -29,11 +28,7 @@ const (
 type AuraHook uint8
 
 const (
-	AuraHookOnApply AuraHook = iota
-	AuraHookOnRemove
-	AuraHookOnPeriodic
-	AuraHookOnProc
-	AuraHookOnStackChange
+	AuraHookOnPeriodic AuraHook = iota
 	AuraHookAfterApply
 	AuraHookAfterRemove
 )

@@ -53,9 +53,6 @@ const (
 // CastFlags 是施法标志的位掩码
 type CastFlags uint32
 
-// EffectProcessorFunc 是效果处理函数的类型
-type EffectProcessorFunc func(s *Spell)
-
 const (
 	TriggeredNone      CastFlags = 0
 	TriggeredIgnoreGCD CastFlags = 1 << iota
@@ -69,9 +66,6 @@ const (
 		TriggeredIgnoreCastItems | TriggeredIgnoreCasterAuraState |
 		TriggeredIgnoreCastInProgress
 )
-
-// CancelHook 是取消回调的类型
-type CancelHook func()
 
 // AuraCreatedFunc 在效果管线创建光环时调用。
 type AuraCreatedFunc func(a *Aura)
@@ -102,7 +96,6 @@ type Spell struct {
 	Result                SpellCastResult
 	TargetInfos           []TargetInfo
 	Bus                   *event.Bus
-	OnCancel              CancelHook
 	OnAuraCreated         AuraCreatedFunc
 	DoDamageAndTriggersFn func(s *Spell) // 伤害结算函数，由 Engine 在 CastSpell 时设置
 	SpellValues           map[uint8]float64
@@ -525,11 +518,6 @@ func (s *Spell) Cancel() {
 		}
 	}
 
-	// 用户钩子
-	if s.OnCancel != nil {
-		s.OnCancel()
-	}
-
 	// 注册中心钩子（在 Bus 事件之前）
 	if s.Engine != nil {
 		s.Engine.CallCancelHook(s.ID, s)
@@ -803,19 +791,6 @@ func (s *Spell) ApplyGlobalCooldown() {
 		}
 		h.AddGlobalCooldown(s.Info.CategoryID, time.Duration(gcdMs)*time.Millisecond)
 	}
-}
-
-// Pushback 延长施法时间，对齐 TC 的 Spell::DelaySpell。
-// 每次推条延长基础施法时间的 25%（最小 250ms），最多累计 2 次。
-func (s *Spell) Pushback() {
-	if s.State != StatePreparing || s.Info.CastTime == 0 {
-		return
-	}
-	pushbackMs := int32(float64(s.Info.CastTime) * 0.25)
-	if pushbackMs < 250 {
-		pushbackMs = 250
-	}
-	s.Timer += pushbackMs
 }
 
 // calculateTargetDelays 计算每个目标的命中延迟 (ms)，对齐 TC AddUnitTarget() 中的 TimeDelay 计算。

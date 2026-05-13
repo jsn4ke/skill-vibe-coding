@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// Ensure effect handlers are registered (effect.init sets spell.ProcessEffectsFn)
+// effect handlers 通过 New() 中 SetScriptRegistry 注册到 spellcore 包
 
 // Engine 是模拟引擎，是时间推进的唯一驱动者。
 // 参考：tc-references/unit-update-architecture.md
@@ -105,7 +105,7 @@ func (e *Engine) GetUnitsInRadius(center [3]float64, radius float64, excludeID u
 }
 
 // GetBus 返回事件总线。
-func (e *Engine) GetBus() interface{} { return e.bus }
+func (e *Engine) GetBus() *event.Bus { return e.bus }
 
 // GetSpellPower 返回指定施法者的法术强度属性。
 func (e *Engine) GetSpellPower(casterID uint64) float64 {

@@ -54,7 +54,7 @@ func (m *mockEngine) GetUnit(id uint64) *Unit { return m.units[id] }
 func (m *mockEngine) GetUnitsInRadius(_ [3]float64, _ float64, _ uint64) []*Unit {
 	return m.inRadius
 }
-func (m *mockEngine) GetBus() interface{}                 { return m.bus }
+func (m *mockEngine) GetBus() *event.Bus                  { return m.bus }
 func (m *mockEngine) GetSpellPower(_ uint64) float64      { return m.spellPow }
 func (m *mockEngine) Tick() time.Duration                 { return m.tick }
 func (m *mockEngine) AuraMgr() *spellcore.AuraManager     { return m.auraMgr }
