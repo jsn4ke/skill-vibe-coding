@@ -403,22 +403,22 @@ func (e *Engine) DispelAuras(targetID uint64, count int32) int {
 	}
 
 	dispelled := 0
-	// 先收集待驱散的光环（避免遍历中修改）
-	var toRemove []*spellcore.Aura
-	for _, a := range target.GetAppliedAuras() {
+	// 先收集待驱散的光环应用（避免遍历中修改）
+	var toRemove []*spellcore.AuraApplication
+	for _, app := range target.GetAppliedAuraApps() {
 		if int32(dispelled) >= count {
 			break
 		}
-		toRemove = append(toRemove, a)
+		toRemove = append(toRemove, app)
 		dispelled++
 	}
 
-	for _, a := range toRemove {
-		owner := e.GetUnit(a.CasterID)
+	for _, app := range toRemove {
+		owner := e.GetUnit(app.Base.CasterID)
 		if owner == nil {
 			continue
 		}
-		e.auraMgr.RemoveAuraFromHosts(a, owner, target, spellcore.RemoveByDispel)
+		e.auraMgr.RemoveAuraApplication(app, owner, target, spellcore.RemoveByDispel)
 	}
 
 	return dispelled
@@ -458,11 +458,17 @@ func (e *Engine) RemoveOwnedAurasBySpellID(casterID uint64, spellID spellcore.Sp
 		}
 	}
 	for _, a := range toRemove {
-		target := e.GetUnit(a.TargetID)
-		if target == nil {
-			target = caster // area aura fallback
+		if a.IsAreaAura {
+			e.auraMgr.RemoveAllApplications(a, caster, spellcore.RemoveByCancel, func(id uint64) spellcore.AuraHost {
+				return e.GetUnit(id)
+			})
+		} else {
+			target := e.GetUnit(a.TargetID)
+			if target == nil {
+				target = caster
+			}
+			e.auraMgr.RemoveAuraFromHosts(a, caster, target, spellcore.RemoveByCancel)
 		}
-		e.auraMgr.RemoveAuraFromHosts(a, caster, target, spellcore.RemoveByCancel)
 	}
 }
 

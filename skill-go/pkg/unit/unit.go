@@ -24,8 +24,8 @@ type Unit struct {
 	// ownedAuras — 此 Unit 创建的光环。此 Unit 驱动其 tick 和过期，对齐 TC 的 m_ownedAuras。
 	ownedAuras []*spellcore.Aura
 
-	// appliedAuras — 当前影响此 Unit 的光环，对齐 TC 的 m_appliedAuras。
-	appliedAuras []*spellcore.Aura
+	// appliedAuraApps — 当前影响此 Unit 的光环应用实例，对齐 TC 的 m_appliedAuras。
+	appliedAuraApps []*spellcore.AuraApplication
 
 	// 移动追踪 — 每帧检测位置变化，对齐 TC 的 _positionUpdateInfo.Relocated。
 	prevPos  entity.Position
@@ -120,6 +120,44 @@ func (u *Unit) RemoveAuraEffects(a *spellcore.Aura) {
 
 	for _, eff := range a.Effects {
 		st := auraEffectStat(eff)
+		if st != nil {
+			source := fmt.Sprintf("aura:%d:%d", a.SpellID, a.ID)
+			u.Stats.RemoveModifierBySource(*st, source)
+		}
+		if flag := ccStateFlag(eff.AuraType); flag != 0 {
+			u.Entity.State = u.Entity.State.Clear(flag)
+		}
+	}
+}
+
+// ApplyAuraEffectsForApp uses AuraApplication effect mask to apply aura effects.
+func (u *Unit) ApplyAuraEffectsForApp(app *spellcore.AuraApplication) {
+	a := app.Base
+	for i := range a.Effects {
+		if app.EffectMask&(1<<uint(i)) == 0 {
+			continue
+		}
+		eff := &a.Effects[i]
+		st := auraEffectStat(*eff)
+		if st != nil {
+			source := fmt.Sprintf("aura:%d:%d", a.SpellID, a.ID)
+			u.Stats.AddModifier(*st, stat.Modifier{Flat: eff.Amount, Source: source})
+		}
+		if flag := ccStateFlag(eff.AuraType); flag != 0 {
+			u.Entity.State = u.Entity.State.Set(flag)
+		}
+	}
+}
+
+// RemoveAuraEffectsForApp uses AuraApplication effect mask to remove aura effects.
+func (u *Unit) RemoveAuraEffectsForApp(app *spellcore.AuraApplication) {
+	a := app.Base
+	for i := range a.Effects {
+		if app.EffectMask&(1<<uint(i)) == 0 {
+			continue
+		}
+		eff := &a.Effects[i]
+		st := auraEffectStat(*eff)
 		if st != nil {
 			source := fmt.Sprintf("aura:%d:%d", a.SpellID, a.ID)
 			u.Stats.RemoveModifierBySource(*st, source)
@@ -252,33 +290,45 @@ func (u *Unit) RemoveAllAurasOnDeath() {
 	}
 	mgr := u.engine.AuraMgr()
 
-	// 移除拥有的光环
+	// 移除拥有的光环（遍历所有 Aura 的 Applications）
 	var ownedCopy []*spellcore.Aura
 	for _, a := range u.ownedAuras {
 		ownedCopy = append(ownedCopy, a)
 	}
+	removed := make(map[*spellcore.AuraApplication]bool)
 	for _, a := range ownedCopy {
-		target := u.engine.GetUnit(a.TargetID)
-		if target == nil {
-			target = u
+		// collect apps to avoid map iteration during modification
+		var apps []*spellcore.AuraApplication
+		for _, app := range a.Applications {
+			apps = append(apps, app)
 		}
-		mgr.RemoveAuraFromHosts(a, u, target, spellcore.RemoveByDeath)
+		for _, app := range apps {
+			target := u.engine.GetUnit(app.TargetID)
+			if target == nil {
+				target = u
+			}
+			mgr.RemoveAuraApplication(app, u, target, spellcore.RemoveByDeath)
+			removed[app] = true
+		}
 	}
 	u.ownedAuras = nil
 
-	// 移除施加的光环
-	var appliedCopy []*spellcore.Aura
-	for _, a := range u.appliedAuras {
-		appliedCopy = append(appliedCopy, a)
+	// remove applied aura apps, skip self-cast already handled above
+	var appsCopy []*spellcore.AuraApplication
+	for _, app := range u.appliedAuraApps {
+		appsCopy = append(appsCopy, app)
 	}
-	for _, a := range appliedCopy {
-		owner := u.engine.GetUnit(a.CasterID)
+	for _, app := range appsCopy {
+		if removed[app] {
+			continue
+		}
+		owner := u.engine.GetUnit(app.Base.CasterID)
 		if owner == nil {
 			continue
 		}
-		mgr.RemoveAuraFromHosts(a, owner, u, spellcore.RemoveByDeath)
+		mgr.RemoveAuraApplication(app, owner, u, spellcore.RemoveByDeath)
 	}
-	u.appliedAuras = nil
+	u.appliedAuraApps = nil
 }
 
 // --- 活跃法术管理 ---
@@ -335,31 +385,6 @@ func (u *Unit) GetOwnedAuras() []*spellcore.Aura {
 
 // --- 施加的光环管理 ---
 
-// AddAppliedAura 注册影响此 Unit 的光环。
-func (u *Unit) AddAppliedAura(a *spellcore.Aura) {
-	u.appliedAuras = append(u.appliedAuras, a)
-}
-
-// RemoveAppliedAura 按索引从施加列表移除光环。
-func (u *Unit) RemoveAppliedAura(idx int) {
-	u.appliedAuras = append(u.appliedAuras[:idx], u.appliedAuras[idx+1:]...)
-}
-
-// GetAppliedAuras 返回施加到此 Unit 的光环列表。
-func (u *Unit) GetAppliedAuras() []*spellcore.Aura {
-	return u.appliedAuras
-}
-
-// FindAppliedAura 按 spellID 和 casterID 查找施加到此 Unit 的光环。
-func (u *Unit) FindAppliedAura(spellID spellcore.SpellID, casterID uint64) *spellcore.Aura {
-	for _, a := range u.appliedAuras {
-		if a.SpellID == spellID && a.CasterID == casterID {
-			return a
-		}
-	}
-	return nil
-}
-
 // FindOwnedAura 按 spellID 和 targetID 查找此 Unit 拥有的光环。
 func (u *Unit) FindOwnedAura(spellID spellcore.SpellID, targetID uint64) *spellcore.Aura {
 	for _, a := range u.ownedAuras {
@@ -375,6 +400,33 @@ func (u *Unit) FindAreaAura(spellID spellcore.SpellID) *spellcore.Aura {
 	for _, a := range u.ownedAuras {
 		if a.IsAreaAura && a.SpellID == spellID {
 			return a
+		}
+	}
+	return nil
+}
+
+// --- 光环应用实例管理（AuraApplication）---
+
+// AddAppliedAuraApp 注册影响此 Unit 的光环应用实例。
+func (u *Unit) AddAppliedAuraApp(app *spellcore.AuraApplication) {
+	u.appliedAuraApps = append(u.appliedAuraApps, app)
+}
+
+// RemoveAppliedAuraApp 按索引从应用列表移除光环应用实例。
+func (u *Unit) RemoveAppliedAuraApp(idx int) {
+	u.appliedAuraApps = append(u.appliedAuraApps[:idx], u.appliedAuraApps[idx+1:]...)
+}
+
+// GetAppliedAuraApps 返回施加到此 Unit 的光环应用列表。
+func (u *Unit) GetAppliedAuraApps() []*spellcore.AuraApplication {
+	return u.appliedAuraApps
+}
+
+// FindAppliedAuraApp 按 spellID 和 casterID 查找光环应用实例。
+func (u *Unit) FindAppliedAuraApp(spellID spellcore.SpellID, casterID uint64) *spellcore.AuraApplication {
+	for _, app := range u.appliedAuraApps {
+		if app.Base.SpellID == spellID && app.Base.CasterID == casterID {
+			return app
 		}
 	}
 	return nil
@@ -400,29 +452,32 @@ func (u *Unit) RemoveAurasWithInterruptFlags(flag spellcore.SpellAuraInterruptFl
 	if u.engine != nil {
 		mgr := u.engine.AuraMgr()
 		for _, a := range toRemove {
-			target := u.engine.GetUnit(a.TargetID)
-			if target == nil {
-				target = u // area aura fallback
+			// 遍历此 Aura 的所有 Application，逐个移除
+			for _, app := range a.Applications {
+				target := u.engine.GetUnit(app.TargetID)
+				if target == nil {
+					target = u
+				}
+				mgr.RemoveAuraApplication(app, u, target, spellcore.RemoveByInterrupt)
 			}
-			mgr.RemoveAuraFromHosts(a, u, target, spellcore.RemoveByInterrupt)
 		}
 	}
 
-	// 同时移除匹配的施加光环（对齐 TC：受伤打断检查目标身上的光环）
-	var appliedToRemove []*spellcore.Aura
-	for _, a := range u.appliedAuras {
-		if a.InterruptFlags.HasFlag(flag) {
-			appliedToRemove = append(appliedToRemove, a)
+	// 同时移除匹配的施加光环应用（对齐 TC：受伤打断检查目标身上的光环）
+	var appsToRemove []*spellcore.AuraApplication
+	for _, app := range u.appliedAuraApps {
+		if app.Base.InterruptFlags.HasFlag(flag) {
+			appsToRemove = append(appsToRemove, app)
 		}
 	}
 	if u.engine != nil {
 		mgr := u.engine.AuraMgr()
-		for _, a := range appliedToRemove {
-			owner := u.engine.GetUnit(a.CasterID)
+		for _, app := range appsToRemove {
+			owner := u.engine.GetUnit(app.Base.CasterID)
 			if owner == nil {
 				continue
 			}
-			mgr.RemoveAuraFromHosts(a, owner, u, spellcore.RemoveByInterrupt)
+			mgr.RemoveAuraApplication(app, owner, u, spellcore.RemoveByInterrupt)
 		}
 	}
 
@@ -474,11 +529,18 @@ func (u *Unit) updateAuras(diff int32) {
 		}
 		// 使用光环管理器进行完整移除，包括脚本钩子（AfterRemove 等）
 		if u.engine != nil {
-			target := u.engine.GetUnit(a.TargetID)
-			if target == nil {
-				target = u // area aura fallback: owner is also the "target"
+			mgr := u.engine.AuraMgr()
+			if a.IsAreaAura {
+				mgr.RemoveAllApplications(a, u, spellcore.RemoveByExpire, func(id uint64) spellcore.AuraHost {
+					return u.engine.GetUnit(id)
+				})
+			} else {
+				target := u.engine.GetUnit(a.TargetID)
+				if target == nil {
+					target = u
+				}
+				mgr.RemoveAuraFromHosts(a, u, target, spellcore.RemoveByExpire)
 			}
-			u.engine.AuraMgr().RemoveAuraFromHosts(a, u, target, spellcore.RemoveByExpire)
 		}
 	}
 }
@@ -542,8 +604,19 @@ func (u *Unit) tickSingleAura(a *spellcore.Aura, elapsed time.Duration, sp float
 	}
 }
 
-// tickAreaAura tick 区域光环的周期效果，每次 tick 解析目标。
+// tickAreaAura tick 区域光环的周期效果。
+// 使用 UpdateTargetMap 增量更新 per-target AuraApplication，对齐 TC 的 Aura::UpdateTargetMap。
 func (u *Unit) tickAreaAura(a *spellcore.Aura, elapsed time.Duration, sp float64, bus *event.Bus) {
+	// 增量更新目标映射
+	if u.engine != nil {
+		areaTargets := u.engine.GetUnitsInRadius(a.AreaCenter, a.AreaRadius, 0)
+		var hosts []spellcore.AuraHost
+		for _, t := range areaTargets {
+			hosts = append(hosts, t)
+		}
+		u.engine.AuraMgr().UpdateTargetMap(a, u, hosts, func(id uint64) spellcore.AuraHost { return u.engine.GetUnit(id) })
+	}
+
 	for i := range a.Effects {
 		eff := &a.Effects[i]
 		if eff.Period == 0 {
@@ -555,31 +628,29 @@ func (u *Unit) tickAreaAura(a *spellcore.Aura, elapsed time.Duration, sp float64
 			eff.TicksDone++
 			amount := eff.Amount + eff.BonusCoeff*sp
 
-			// 每次 tick 解析区域目标
-			if u.engine != nil {
-				targets := u.engine.GetUnitsInRadius(a.AreaCenter, a.AreaRadius, 0)
-				for _, t := range targets {
-					if bus != nil {
-						bus.Publish(event.Event{
-							Type:     event.OnAuraTick,
-							SourceID: a.CasterID,
-							TargetID: t.ID(),
-							SpellID:  uint32(a.SpellID),
-							Value:    amount,
-							Extra:    map[string]any{"spellName": a.SpellName},
-						})
-					}
+			// 遍历所有已注册的 AuraApplication，对齐 TC 的 m_applications 遍历
+			for _, app := range a.Applications {
+				if bus != nil {
+					bus.Publish(event.Event{
+						Type:     event.OnAuraTick,
+						SourceID: a.CasterID,
+						TargetID: app.TargetID,
+						SpellID:  uint32(a.SpellID),
+						Value:    amount,
+						Extra:    map[string]any{"spellName": a.SpellName},
+					})
+				}
 
-					// 注册中心钩子：周期 tick（区域光环按目标）
+				// 注册中心钩子：周期 tick（区域光环按目标）
+				if u.engine != nil {
 					if reg := u.engine.ScriptRegistry(); reg != nil {
 						reg.CallAuraHook(a.SpellID, spellcore.AuraHookOnPeriodic, &spellcore.AuraContext{
 							SpellID:  a.SpellID,
-							TargetID: t.ID(),
+							TargetID: app.TargetID,
 							CasterID: a.CasterID,
 							Amount:   amount,
 						})
 					}
-					// Settlement for area aura ticks
 					dmg := 0.0
 					heal := 0.0
 					if eff.AuraType == spellcore.AuraPeriodicDamage {
@@ -588,10 +659,10 @@ func (u *Unit) tickAreaAura(a *spellcore.Aura, elapsed time.Duration, sp float64
 						heal = amount
 					}
 					if dmg > 0 || heal > 0 {
-						u.engine.SettlePeriodicDamage(a.CasterID, t.ID(), uint32(a.SpellID), dmg, heal, false, a.SpellName)
+						u.engine.SettlePeriodicDamage(a.CasterID, app.TargetID, uint32(a.SpellID), dmg, heal, false, a.SpellName)
 					}
 					if eff.AuraType == spellcore.AuraPeriodicTriggerSpell && eff.TriggerSpellID != 0 {
-						u.engine.TriggerPeriodicSpell(a.CasterID, t.ID(), eff.TriggerSpellID)
+						u.engine.TriggerPeriodicSpell(a.CasterID, app.TargetID, eff.TriggerSpellID)
 					}
 				}
 			}

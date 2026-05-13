@@ -60,6 +60,8 @@ type AuraContext struct {
 	PreventDefault bool
 	RemoveMode     uint8
 	Aura           *Aura
+	// App 是光环应用实例（per-target），可能为 nil（旧代码路径）。
+	App *AuraApplication
 }
 
 // AuraHandlerFunc 是光环脚本钩子的处理函数类型。

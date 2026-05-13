@@ -140,7 +140,7 @@ func TestSettlement_DamageBreaksAura(t *testing.T) {
 	eng.Simulate(100, 50)
 
 	// 验证光环已施加
-	if len(target.GetAppliedAuras()) == 0 {
+	if len(target.GetAppliedAuraApps()) == 0 {
 		t.Fatal("expected aura to be applied before damage")
 	}
 
@@ -149,7 +149,7 @@ func TestSettlement_DamageBreaksAura(t *testing.T) {
 	eng.Simulate(100, 50)
 
 	// 验证光环被移除
-	if len(target.GetAppliedAuras()) > 0 {
+	if len(target.GetAppliedAuraApps()) > 0 {
 		t.Error("expected aura with AuraInterruptOnDamage to be removed after taking damage")
 	}
 }

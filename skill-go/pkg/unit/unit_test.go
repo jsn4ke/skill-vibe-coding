@@ -110,8 +110,8 @@ func TestNewUnit(t *testing.T) {
 	if len(u.ownedAuras) != 0 {
 		t.Fatal("ownedAuras should be empty")
 	}
-	if len(u.appliedAuras) != 0 {
-		t.Fatal("appliedAuras should be empty")
+	if len(u.appliedAuraApps) != 0 {
+		t.Fatal("appliedAuraApps should be empty")
 	}
 	if u.IsMoving() {
 		t.Fatal("should not be moving initially")
@@ -197,7 +197,7 @@ func TestKill_RemovesAuras(t *testing.T) {
 
 	a := spellcore.NewAura(100, 1, 2, spellcore.AuraPeriodicDamage, 5*time.Second)
 	eng.auraMgr.ApplyAura(caster, target, a)
-	if len(target.GetAppliedAuras()) == 0 {
+	if len(target.GetAppliedAuraApps()) == 0 {
 		t.Fatal("aura should be applied")
 	}
 
@@ -206,8 +206,8 @@ func TestKill_RemovesAuras(t *testing.T) {
 	if len(caster.GetOwnedAuras()) != 0 {
 		t.Fatalf("caster owned auras should be empty, got %d", len(caster.GetOwnedAuras()))
 	}
-	if len(target.GetAppliedAuras()) != 0 {
-		t.Fatalf("target applied auras should be empty, got %d", len(target.GetAppliedAuras()))
+	if len(target.GetAppliedAuraApps()) != 0 {
+		t.Fatalf("target applied auras should be empty, got %d", len(target.GetAppliedAuraApps()))
 	}
 }
 
@@ -321,26 +321,28 @@ func TestAppliedAuraManagement(t *testing.T) {
 	a1 := spellcore.NewAura(100, 2, 1, spellcore.AuraPeriodicDamage, 5*time.Second)
 	a2 := spellcore.NewAura(200, 3, 1, spellcore.AuraPeriodicHeal, 3*time.Second)
 
-	u.AddAppliedAura(a1)
-	u.AddAppliedAura(a2)
+	app1 := spellcore.NewAuraApplication(a1, u.GetID())
+	app2 := spellcore.NewAuraApplication(a2, u.GetID())
+	u.AddAppliedAuraApp(app1)
+	u.AddAppliedAuraApp(app2)
 
-	if len(u.GetAppliedAuras()) != 2 {
-		t.Fatal("should have 2 applied auras")
+	if len(u.GetAppliedAuraApps()) != 2 {
+		t.Fatal("should have 2 applied aura apps")
 	}
 
-	found := u.FindAppliedAura(100, 2)
-	if found == nil || found.SpellID != 100 {
-		t.Fatal("FindAppliedAura should find spell 100 caster 2")
+	found := u.FindAppliedAuraApp(100, 2)
+	if found == nil || found.Base.SpellID != 100 {
+		t.Fatal("FindAppliedAuraApp should find spell 100 caster 2")
 	}
 
-	notFound := u.FindAppliedAura(100, 999)
+	notFound := u.FindAppliedAuraApp(100, 999)
 	if notFound != nil {
-		t.Fatal("FindAppliedAura should return nil for wrong caster")
+		t.Fatal("FindAppliedAuraApp should return nil for wrong caster")
 	}
 
-	u.RemoveAppliedAura(0)
-	if len(u.GetAppliedAuras()) != 1 {
-		t.Fatal("should have 1 applied aura after removal")
+	u.RemoveAppliedAuraApp(0)
+	if len(u.GetAppliedAuraApps()) != 1 {
+		t.Fatal("should have 1 applied aura app after removal")
 	}
 }
 
@@ -348,11 +350,12 @@ func TestRemoveAurasWithInterruptFlags_NoneFlag(t *testing.T) {
 	u, _ := newTestUnitWithEngine(1, 1000)
 	a := spellcore.NewAura(100, 2, 1, spellcore.AuraModRoot, 5*time.Second)
 	a.InterruptFlags = spellcore.AuraInterruptOnMovement
-	u.AddAppliedAura(a)
+	app := spellcore.NewAuraApplication(a, u.GetID())
+	u.AddAppliedAuraApp(app)
 
 	// AuraInterruptNone should be no-op
 	u.RemoveAurasWithInterruptFlags(spellcore.AuraInterruptNone)
-	if len(u.GetAppliedAuras()) != 1 {
+	if len(u.GetAppliedAuraApps()) != 1 {
 		t.Fatal("AuraInterruptNone should not remove anything")
 	}
 }
@@ -376,10 +379,10 @@ func TestRemoveAurasWithInterruptFlags_RemovesMatching(t *testing.T) {
 	target.RemoveAurasWithInterruptFlags(spellcore.AuraInterruptOnMovement)
 
 	// moveAura removed, safeAura stays
-	if len(target.GetAppliedAuras()) != 1 {
-		t.Fatalf("should have 1 applied aura, got %d", len(target.GetAppliedAuras()))
+	if len(target.GetAppliedAuraApps()) != 1 {
+		t.Fatalf("should have 1 applied aura, got %d", len(target.GetAppliedAuraApps()))
 	}
-	if target.GetAppliedAuras()[0].SpellID != 200 {
+	if target.GetAppliedAuraApps()[0].Base.SpellID != 200 {
 		t.Fatal("remaining aura should be spell 200")
 	}
 }
@@ -449,7 +452,6 @@ func TestUpdate_MovementRemovesAuras(t *testing.T) {
 
 	moveAura := spellcore.NewAura(100, 2, 1, spellcore.AuraModRoot, 5*time.Second)
 	moveAura.InterruptFlags = spellcore.AuraInterruptOnMovement
-	u.AddAppliedAura(moveAura)
 
 	// also register as owned by caster
 	caster := newTestUnit(2, 1000)
@@ -460,7 +462,7 @@ func TestUpdate_MovementRemovesAuras(t *testing.T) {
 	u.SetPosition(entity.Position{X: 5, Y: 0, Z: 0})
 	u.Update(100)
 
-	if len(u.GetAppliedAuras()) != 0 {
+	if len(u.GetAppliedAuraApps()) != 0 {
 		t.Fatal("movement should remove auras with AuraInterruptOnMovement")
 	}
 }
@@ -502,7 +504,7 @@ func TestUpdateAuras_TickAndExpire(t *testing.T) {
 	if len(caster.GetOwnedAuras()) != 0 {
 		t.Fatal("owned aura should be removed after expiry")
 	}
-	if len(target.GetAppliedAuras()) != 0 {
+	if len(target.GetAppliedAuraApps()) != 0 {
 		t.Fatal("applied aura should be removed after expiry")
 	}
 }

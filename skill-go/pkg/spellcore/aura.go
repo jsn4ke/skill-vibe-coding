@@ -11,17 +11,29 @@ import (
 // Unit.owner 和 Unit.target 都满足此接口。
 type AuraHost interface {
 	GetID() uint64
+
+	// --- 拥有端（caster 侧）---
 	AddOwnedAura(a *Aura)
 	RemoveOwnedAura(idx int)
 	GetOwnedAuras() []*Aura
-	AddAppliedAura(a *Aura)
-	RemoveAppliedAura(idx int)
-	GetAppliedAuras() []*Aura
-	FindAppliedAura(spellID SpellID, casterID uint64) *Aura
+
+	// --- 施加端（target 侧，使用 AuraApplication）---
+	// AddAppliedAuraApp 注册影响此 Unit 的光环应用实例。
+	AddAppliedAuraApp(app *AuraApplication)
+	// RemoveAppliedAuraApp 按索引从应用列表移除光环应用实例。
+	RemoveAppliedAuraApp(idx int)
+	// GetAppliedAuraApps 返回施加到此 Unit 的光环应用列表。
+	GetAppliedAuraApps() []*AuraApplication
+	// FindAppliedAuraApp 按 spellID 和 casterID 查找光环应用实例。
+	FindAppliedAuraApp(spellID SpellID, casterID uint64) *AuraApplication
+
 	// ApplyAuraEffects 在光环施加时应用属性修改，由 Unit 实现
 	ApplyAuraEffects(a *Aura)
-	// RemoveAuraEffects 在光环移除时撤销属性修改，由 Unit 实现
 	RemoveAuraEffects(a *Aura)
+	// ApplyAuraEffectsForApp 使用 AuraApplication 的效果掩码应用光环效果。
+	ApplyAuraEffectsForApp(app *AuraApplication)
+	// RemoveAuraEffectsForApp 使用 AuraApplication 的效果掩码撤销光环效果。
+	RemoveAuraEffectsForApp(app *AuraApplication)
 }
 
 // AuraType 表示光环类型的枚举。
@@ -102,6 +114,9 @@ type Aura struct {
 	AreaRadius     float64
 	SpellValues    map[uint8]float64
 	InterruptFlags SpellAuraInterruptFlags
+	// Applications 是此光环的所有目标应用映射，对齐 TC 的 m_applications。
+	// key 为 targetID。区域光环可以有多个 application。
+	Applications map[uint64]*AuraApplication
 }
 
 // AuraEffect 表示光环的周期效果。
@@ -120,13 +135,14 @@ type AuraEffect struct {
 // NewAura 创建一个新的光环。
 func NewAura(spellID SpellID, casterID, targetID uint64, auraType AuraType, duration time.Duration) *Aura {
 	return &Aura{
-		SpellID:     spellID,
-		CasterID:    casterID,
-		TargetID:    targetID,
-		AuraType:    auraType,
-		Duration:    duration,
-		MaxDuration: duration,
-		AppliedAt:   time.Now(),
+		SpellID:      spellID,
+		CasterID:     casterID,
+		TargetID:     targetID,
+		AuraType:     auraType,
+		Duration:     duration,
+		MaxDuration:  duration,
+		AppliedAt:    time.Now(),
+		Applications: make(map[uint64]*AuraApplication),
 	}
 }
 
@@ -269,30 +285,34 @@ func (m *AuraManager) NextID() uint64 {
 // --- Unit 级别方法（新架构）---
 
 // ApplyAura 在拥有者和目标两端注册光环。这是光环应用的主入口。
-// 光环被添加到 owner.ownedAuras 和 target.appliedAuras。
+// 光环被添加到 owner.ownedAuras，同时在 target 上创建 AuraApplication。
 func (m *AuraManager) ApplyAura(owner, target AuraHost, a *Aura) {
 	a.ID = m.NextID()
 
-	// Check for existing aura on target (stack/refresh/replace logic)
-	existing := target.FindAppliedAura(a.SpellID, a.CasterID)
+	// 检查目标上是否已有同法术同施法者的光环应用（叠加/刷新/替换逻辑）
+	existing := target.FindAppliedAuraApp(a.SpellID, a.CasterID)
 	if existing != nil {
-		switch existing.StackRule {
+		switch existing.Base.StackRule {
 		case StackRefresh:
-			existing.Refresh()
+			existing.Base.Refresh()
 			return
 		case StackAddStack:
-			existing.AddStack()
+			existing.Base.AddStack()
 			return
 		case StackReplace:
-			m.RemoveAuraFromHosts(existing, owner, target, RemoveByStack)
+			m.RemoveAuraApplication(existing, owner, target, RemoveByStack)
 		default:
-			m.RemoveAuraFromHosts(existing, owner, target, RemoveByDefault)
+			m.RemoveAuraApplication(existing, owner, target, RemoveByDefault)
 		}
 	}
 
-	// 双重注册
+	// 创建 AuraApplication（per-target 应用实例），对齐 TC 的 _CreateAuraApplication
+	app := NewAuraApplication(a, target.GetID())
+
+	// 双重注册：owner 持有 Aura，target 持有 AuraApplication
 	owner.AddOwnedAura(a)
-	target.AddAppliedAura(a)
+	target.AddAppliedAuraApp(app)
+	a.Applications[target.GetID()] = app
 
 	// 目标端应用光环效果（属性修改等）
 	target.ApplyAuraEffects(a)
@@ -301,9 +321,10 @@ func (m *AuraManager) ApplyAura(owner, target AuraHost, a *Aura) {
 	if m.registry != nil {
 		m.registry.CallAuraHook(a.SpellID, AuraHookAfterApply, &AuraContext{
 			SpellID:  a.SpellID,
-			TargetID: a.TargetID,
+			TargetID: target.GetID(),
 			CasterID: a.CasterID,
 			Aura:     a,
+			App:      app,
 		})
 	}
 
@@ -312,15 +333,18 @@ func (m *AuraManager) ApplyAura(owner, target AuraHost, a *Aura) {
 		m.bus.Publish(event.Event{
 			Type:     event.OnAuraApplied,
 			SourceID: a.CasterID,
-			TargetID: a.TargetID,
+			TargetID: target.GetID(),
 			SpellID:  uint32(a.SpellID),
 			Extra:    map[string]any{"auraType": auraTypeName(a.AuraType), "duration": a.Duration, "spellName": a.SpellName},
 		})
 	}
 }
 
-// RemoveAuraFromHosts 从拥有者和目标两端移除光环。
-func (m *AuraManager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode RemoveMode) {
+// RemoveAuraApplication 是核心移除方法，从 owner 和 target 移除光环应用。
+func (m *AuraManager) RemoveAuraApplication(app *AuraApplication, owner, target AuraHost, mode RemoveMode) {
+	a := app.Base
+	app.RemoveMode = mode
+
 	// 目标端撤销光环效果（属性修改等）
 	target.RemoveAuraEffects(a)
 
@@ -328,26 +352,118 @@ func (m *AuraManager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode 
 	if m.registry != nil {
 		m.registry.CallAuraHook(a.SpellID, AuraHookAfterRemove, &AuraContext{
 			SpellID:    a.SpellID,
-			TargetID:   a.TargetID,
+			TargetID:   app.TargetID,
 			CasterID:   a.CasterID,
 			RemoveMode: uint8(mode),
 			Aura:       a,
+			App:        app,
 		})
 	}
 
-	// 从拥有者的拥有列表移除
-	for i, owned := range owner.GetOwnedAuras() {
-		if owned.ID == a.ID {
-			owner.RemoveOwnedAura(i)
+	// target AuraApplication list removal
+	for i, a2 := range target.GetAppliedAuraApps() {
+		if a2 == app {
+			target.RemoveAppliedAuraApp(i)
 			break
 		}
 	}
 
-	// 从目标的施加列表移除
-	for i, applied := range target.GetAppliedAuras() {
-		if applied.ID == a.ID {
-			target.RemoveAppliedAura(i)
-			break
+	delete(a.Applications, target.GetID())
+
+	if len(a.Applications) == 0 {
+		for i, owned := range owner.GetOwnedAuras() {
+			if owned.ID == a.ID {
+				owner.RemoveOwnedAura(i)
+				break
+			}
+		}
+	}
+}
+
+// RemoveAuraFromHosts 是便捷方法，通过 Aura 查找对应 target 的 AuraApplication 并移除。
+// 向后兼容：Living Bomb 等脚本钩子仍然持有 *Aura 并调用此方法。
+func (m *AuraManager) RemoveAuraFromHosts(a *Aura, owner, target AuraHost, mode RemoveMode) {
+	app := a.Applications[target.GetID()]
+	if app == nil {
+		return
+	}
+	m.RemoveAuraApplication(app, owner, target, mode)
+}
+
+// RemoveAllApplications 移除 Aura 的所有 AuraApplication，用于区域光环过期/取消。
+func (m *AuraManager) RemoveAllApplications(a *Aura, owner AuraHost, mode RemoveMode, getTarget func(uint64) AuraHost) {
+	// 收集所有 app，避免遍历中修改 map
+	var apps []*AuraApplication
+	for _, app := range a.Applications {
+		apps = append(apps, app)
+	}
+	for _, app := range apps {
+		target := getTarget(app.TargetID)
+		if target == nil {
+			delete(a.Applications, app.TargetID)
+			continue
+		}
+		m.RemoveAuraApplication(app, owner, target, mode)
+	}
+}
+
+// UpdateTargetMap 增量更新区域光环的目标映射，对齐 TC 的 Aura::UpdateTargetMap。
+// 比对当前 application map 与新目标列表，只对差集操作。
+func (m *AuraManager) UpdateTargetMap(a *Aura, owner AuraHost, targets []AuraHost, getTarget func(uint64) AuraHost) {
+	newTargets := make(map[uint64]AuraHost)
+	for _, t := range targets {
+		newTargets[t.GetID()] = t
+	}
+
+	// 移除不在新目标集合中的现有应用
+	var toRemove []*AuraApplication
+	for targetID, app := range a.Applications {
+		if _, exists := newTargets[targetID]; !exists {
+			toRemove = append(toRemove, app)
+		}
+	}
+	for _, app := range toRemove {
+		t := getTarget(app.TargetID)
+		if t != nil {
+			t.RemoveAuraEffects(a)
+			for i, a2 := range t.GetAppliedAuraApps() {
+				if a2 == app {
+					t.RemoveAppliedAuraApp(i)
+					break
+				}
+			}
+		}
+		delete(a.Applications, app.TargetID)
+	}
+
+	// 为新目标创建应用
+	for targetID, target := range newTargets {
+		if _, exists := a.Applications[targetID]; exists {
+			continue
+		}
+		app := NewAuraApplication(a, targetID)
+		target.AddAppliedAuraApp(app)
+		a.Applications[targetID] = app
+		target.ApplyAuraEffects(a)
+
+		if m.registry != nil {
+			m.registry.CallAuraHook(a.SpellID, AuraHookAfterApply, &AuraContext{
+				SpellID:  a.SpellID,
+				TargetID: targetID,
+				CasterID: a.CasterID,
+				Aura:     a,
+				App:      app,
+			})
+		}
+
+		if m.bus != nil {
+			m.bus.Publish(event.Event{
+				Type:     event.OnAuraApplied,
+				SourceID: a.CasterID,
+				TargetID: targetID,
+				SpellID:  uint32(a.SpellID),
+				Extra:    map[string]any{"auraType": auraTypeName(a.AuraType), "duration": a.Duration, "spellName": a.SpellName},
+			})
 		}
 	}
 }

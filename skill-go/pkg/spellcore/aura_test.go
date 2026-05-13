@@ -96,9 +96,9 @@ func TestAura_CalcAmount(t *testing.T) {
 }
 
 type mockAuraHost struct {
-	id           uint64
-	ownedAuras   []*Aura
-	appliedAuras []*Aura
+	id              uint64
+	ownedAuras      []*Aura
+	appliedAuraApps []*AuraApplication
 }
 
 func (h *mockAuraHost) GetID() uint64        { return h.id }
@@ -107,21 +107,29 @@ func (h *mockAuraHost) RemoveOwnedAura(idx int) {
 	h.ownedAuras = append(h.ownedAuras[:idx], h.ownedAuras[idx+1:]...)
 }
 func (h *mockAuraHost) GetOwnedAuras() []*Aura { return h.ownedAuras }
-func (h *mockAuraHost) AddAppliedAura(a *Aura) { h.appliedAuras = append(h.appliedAuras, a) }
-func (h *mockAuraHost) RemoveAppliedAura(idx int) {
-	h.appliedAuras = append(h.appliedAuras[:idx], h.appliedAuras[idx+1:]...)
+func (h *mockAuraHost) AddAppliedAuraApp(app *AuraApplication) {
+	h.appliedAuraApps = append(h.appliedAuraApps, app)
 }
-func (h *mockAuraHost) GetAppliedAuras() []*Aura { return h.appliedAuras }
-func (h *mockAuraHost) FindAppliedAura(spellID SpellID, casterID uint64) *Aura {
-	for _, a := range h.appliedAuras {
-		if a.SpellID == spellID && a.CasterID == casterID {
-			return a
+func (h *mockAuraHost) RemoveAppliedAuraApp(idx int) {
+	h.appliedAuraApps = append(h.appliedAuraApps[:idx], h.appliedAuraApps[idx+1:]...)
+}
+func (h *mockAuraHost) GetAppliedAuraApps() []*AuraApplication { return h.appliedAuraApps }
+func (h *mockAuraHost) FindAppliedAuraApp(spellID SpellID, casterID uint64) *AuraApplication {
+	for _, app := range h.appliedAuraApps {
+		if app.Base.SpellID == spellID && app.Base.CasterID == casterID {
+			return app
 		}
 	}
 	return nil
 }
 func (h *mockAuraHost) ApplyAuraEffects(_ *Aura)  {}
 func (h *mockAuraHost) RemoveAuraEffects(_ *Aura) {}
+func (h *mockAuraHost) ApplyAuraEffectsForApp(app *AuraApplication) {
+	h.ApplyAuraEffects(app.Base)
+}
+func (h *mockAuraHost) RemoveAuraEffectsForApp(app *AuraApplication) {
+	h.RemoveAuraEffects(app.Base)
+}
 
 func TestAuraManager_ApplyAura_New(t *testing.T) {
 	mgr := NewAuraManager(nil)
@@ -134,8 +142,8 @@ func TestAuraManager_ApplyAura_New(t *testing.T) {
 	if len(owner.GetOwnedAuras()) != 1 {
 		t.Errorf("owner should have 1 owned aura, got %d", len(owner.GetOwnedAuras()))
 	}
-	if len(target.GetAppliedAuras()) != 1 {
-		t.Errorf("target should have 1 applied aura, got %d", len(target.GetAppliedAuras()))
+	if len(target.GetAppliedAuraApps()) != 1 {
+		t.Errorf("target should have 1 applied aura app, got %d", len(target.GetAppliedAuraApps()))
 	}
 	_ = a.ID // ID assigned by manager
 }
@@ -148,8 +156,10 @@ func TestAuraManager_ApplyAura_StackRefresh(t *testing.T) {
 	a1 := NewAura(SpellID(100), 1, 2, AuraModStat, 10*time.Second)
 	a1.StackRule = StackRefresh
 	a1.ID = 1
+	app1 := NewAuraApplication(a1, target.id)
 	owner.AddOwnedAura(a1)
-	target.AddAppliedAura(a1)
+	target.AddAppliedAuraApp(app1)
+	a1.Applications[target.id] = app1
 
 	a2 := NewAura(SpellID(100), 1, 2, AuraModStat, 10*time.Second)
 	a2.StackRule = StackRefresh
@@ -170,8 +180,10 @@ func TestAuraManager_ApplyAura_StackAddStack(t *testing.T) {
 	a1.StackRule = StackAddStack
 	a1.MaxStack = 5
 	a1.ID = 1
+	app1 := NewAuraApplication(a1, target.id)
 	owner.AddOwnedAura(a1)
-	target.AddAppliedAura(a1)
+	target.AddAppliedAuraApp(app1)
+	a1.Applications[target.id] = app1
 
 	a2 := NewAura(SpellID(100), 1, 2, AuraModStat, 10*time.Second)
 	a2.StackRule = StackAddStack
@@ -195,7 +207,7 @@ func TestAuraManager_RemoveAuraFromHosts(t *testing.T) {
 	if len(owner.GetOwnedAuras()) != 0 {
 		t.Errorf("owner should have 0 auras after removal, got %d", len(owner.GetOwnedAuras()))
 	}
-	if len(target.GetAppliedAuras()) != 0 {
-		t.Errorf("target should have 0 auras after removal, got %d", len(target.GetAppliedAuras()))
+	if len(target.GetAppliedAuraApps()) != 0 {
+		t.Errorf("target should have 0 aura apps after removal, got %d", len(target.GetAppliedAuraApps()))
 	}
 }

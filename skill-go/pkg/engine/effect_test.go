@@ -271,7 +271,7 @@ func TestEffectDispel_RemovesAura(t *testing.T) {
 	eng.CastSpell(caster, auraInfo, WithTarget(target.ID()))
 	eng.Simulate(100, 50)
 
-	if len(target.GetAppliedAuras()) == 0 {
+	if len(target.GetAppliedAuraApps()) == 0 {
 		t.Fatal("expected aura to be applied before dispel")
 	}
 
@@ -285,7 +285,7 @@ func TestEffectDispel_RemovesAura(t *testing.T) {
 	eng.CastSpell(caster, dispelInfo, WithTarget(target.ID()))
 	eng.Simulate(100, 50)
 
-	if len(target.GetAppliedAuras()) > 0 {
+	if len(target.GetAppliedAuraApps()) > 0 {
 		t.Error("expected aura to be removed after dispel")
 	}
 }
@@ -305,8 +305,8 @@ func TestEffectDispel_MultipleAuras(t *testing.T) {
 		eng.Simulate(100, 50)
 	}
 
-	if len(target.GetAppliedAuras()) != 3 {
-		t.Fatalf("expected 3 auras, got %d", len(target.GetAppliedAuras()))
+	if len(target.GetAppliedAuraApps()) != 3 {
+		t.Fatalf("expected 3 auras, got %d", len(target.GetAppliedAuraApps()))
 	}
 
 	// Dispel 2
@@ -320,8 +320,8 @@ func TestEffectDispel_MultipleAuras(t *testing.T) {
 	eng.CastSpell(caster, dispelInfo, WithTarget(target.ID()))
 	eng.Simulate(100, 50)
 
-	if len(target.GetAppliedAuras()) != 1 {
-		t.Errorf("expected 1 aura remaining after dispel 2, got %d", len(target.GetAppliedAuras()))
+	if len(target.GetAppliedAuraApps()) != 1 {
+		t.Errorf("expected 1 aura remaining after dispel 2, got %d", len(target.GetAppliedAuraApps()))
 	}
 }
 
