@@ -111,21 +111,19 @@ func (e *Entity) IsAlive() bool {
 	return e.State.Has(StateAlive) && !e.State.Has(StateDead)
 }
 
+// ccCastBlockStates 阻止施法的 CC 状态掩码，新增 CC 类型只需修改此处。
+// 注意：实际施法阻止由 Spell.CheckCast() 通过 GetCCState() + PreventionType 精确判定，此为保守快速检查。
+const ccCastBlockStates = StateStunned | StateSilenced | StateFeared | StateConfused | StatePacified
+
+// ccMoveBlockStates 阻止移动的 CC 状态掩码，新增 CC 类型只需修改此处。
+const ccMoveBlockStates = StateRooted | StateStunned | StateFeared | StateConfused
+
 // CanCast 判断实体是否可以施法（存活且未被 CC 限制施法），对齐 TC 的 CC 阻止检查。
 func (e *Entity) CanCast() bool {
-	return e.IsAlive() &&
-		!e.State.Has(StateStunned) &&
-		!e.State.Has(StateSilenced) &&
-		!e.State.Has(StateFeared) &&
-		!e.State.Has(StateConfused) &&
-		!e.State.Has(StatePacified)
+	return e.IsAlive() && !e.State.Has(ccCastBlockStates)
 }
 
 // CanMove 判断实体是否可以移动（存活且未被 CC 限制移动），对齐 TC 的 CC 阻止检查。
 func (e *Entity) CanMove() bool {
-	return e.IsAlive() &&
-		!e.State.Has(StateRooted) &&
-		!e.State.Has(StateStunned) &&
-		!e.State.Has(StateFeared) &&
-		!e.State.Has(StateConfused)
+	return e.IsAlive() && !e.State.Has(ccMoveBlockStates)
 }

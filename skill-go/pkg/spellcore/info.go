@@ -47,9 +47,9 @@ type SpellPreventionType uint8
 
 const (
 	PreventNone      SpellPreventionType = 0
-	PreventSilence   SpellPreventionType = 1 << iota // 被沉默阻止
-	PreventPacify                                    // 被安抚阻止
-	PreventNoActions                                 // 被禁止行动阻止
+	PreventSilence   SpellPreventionType = 1 // 被沉默阻止，对齐 TC SPELL_PREVENTION_TYPE_SILENCE
+	PreventPacify    SpellPreventionType = 2 // 被安抚阻止，对齐 TC SPELL_PREVENTION_TYPE_PACIFY
+	PreventNoActions SpellPreventionType = 4 // 被禁止行动阻止，对齐 TC SPELL_PREVENTION_TYPE_NO_ACTIONS
 )
 
 // SpellInfo 定义法术的静态信息。
