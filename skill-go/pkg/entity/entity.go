@@ -111,12 +111,21 @@ func (e *Entity) IsAlive() bool {
 	return e.State.Has(StateAlive) && !e.State.Has(StateDead)
 }
 
-// CanCast 判断实体是否可以施法（存活且未昏迷/沉默）。
+// CanCast 判断实体是否可以施法（存活且未被 CC 限制施法），对齐 TC 的 CC 阻止检查。
 func (e *Entity) CanCast() bool {
-	return e.IsAlive() && !e.State.Has(StateStunned) && !e.State.Has(StateSilenced)
+	return e.IsAlive() &&
+		!e.State.Has(StateStunned) &&
+		!e.State.Has(StateSilenced) &&
+		!e.State.Has(StateFeared) &&
+		!e.State.Has(StateConfused) &&
+		!e.State.Has(StatePacified)
 }
 
-// CanMove 判断实体是否可以移动（存活且未定身/昏迷）。
+// CanMove 判断实体是否可以移动（存活且未被 CC 限制移动），对齐 TC 的 CC 阻止检查。
 func (e *Entity) CanMove() bool {
-	return e.IsAlive() && !e.State.Has(StateRooted) && !e.State.Has(StateStunned)
+	return e.IsAlive() &&
+		!e.State.Has(StateRooted) &&
+		!e.State.Has(StateStunned) &&
+		!e.State.Has(StateFeared) &&
+		!e.State.Has(StateConfused)
 }

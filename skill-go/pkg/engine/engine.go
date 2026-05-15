@@ -527,6 +527,7 @@ func (e *Engine) settleOneTarget(ctx combat.SettlementContext) {
 		// 受伤打断光环，对齐 TC 的 RemoveAurasWithInterruptFlags(Damage)
 		if actualDelta < 0 {
 			target.RemoveAurasWithInterruptFlags(spellcore.AuraInterruptOnDamage)
+			target.InterruptSpellsOnDamage()
 		}
 
 		// 发布伤害事件

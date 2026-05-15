@@ -42,26 +42,38 @@ func (f SpellAuraInterruptFlags) HasFlag(flag SpellAuraInterruptFlags) bool {
 	return f&flag != 0
 }
 
+// SpellPreventionType 标识法术被哪种 CC 类型阻止施放，对齐 TC 的 SpellPreventionType。
+type SpellPreventionType uint8
+
+const (
+	PreventNone      SpellPreventionType = 0
+	PreventSilence   SpellPreventionType = 1 << iota // 被沉默阻止
+	PreventPacify                                    // 被安抚阻止
+	PreventNoActions                                 // 被禁止行动阻止
+)
+
 // SpellInfo 定义法术的静态信息。
 type SpellInfo struct {
-	ID             SpellID
-	Name           string
-	CastTime       uint32
-	Duration       uint32
-	CooldownTime   uint32
-	CategoryID     uint32
-	RangeMin       float64
-	RangeMax       float64
-	PowerCost      uint32
-	PowerType      uint8
-	LaunchDelay    uint32
-	Speed          float64
-	MinDuration    uint32
-	IsChanneled    bool
-	School         uint8 // 法术学校，对应 combat.DamageSchool 枚举
-	Attributes     SpellAttribute
-	InterruptFlags SpellInterruptFlags
-	Effects        []SpellEffectInfo
+	ID                    SpellID
+	Name                  string
+	CastTime              uint32
+	Duration              uint32
+	CooldownTime          uint32
+	CategoryID            uint32
+	RangeMin              float64
+	RangeMax              float64
+	PowerCost             uint32
+	PowerType             uint8
+	LaunchDelay           uint32
+	Speed                 float64
+	MinDuration           uint32
+	IsChanneled           bool
+	School                uint8 // 法术学校，对应 combat.DamageSchool 枚举
+	Attributes            SpellAttribute
+	InterruptFlags        SpellInterruptFlags
+	PreventionType        SpellPreventionType
+	ChannelInterruptFlags SpellAuraInterruptFlags // 引导法术的中断标志，复用 SpellAuraInterruptFlags
+	Effects               []SpellEffectInfo
 }
 
 func (si *SpellInfo) HasAttribute(attr SpellAttribute) bool {

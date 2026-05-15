@@ -390,10 +390,10 @@ func TestRemoveAurasWithInterruptFlags_RemovesMatching(t *testing.T) {
 func TestRemoveAurasWithInterruptFlags_CancelsChanneling(t *testing.T) {
 	u, _ := newTestUnitWithEngine(1, 1000)
 
-	// Add a channeling spell with InterruptMovement
+	// 引导法术的 ChannelInterruptFlags 设置为 AuraInterruptOnMovement
 	info := &spellcore.SpellInfo{
-		Name:           "channel",
-		InterruptFlags: spellcore.InterruptMovement,
+		Name:                  "channel",
+		ChannelInterruptFlags: spellcore.AuraInterruptOnMovement,
 	}
 	s := spellcore.NewSpell(1, info, u, 0)
 	s.State = spellcore.StateChanneling
@@ -406,12 +406,13 @@ func TestRemoveAurasWithInterruptFlags_CancelsChanneling(t *testing.T) {
 	}
 }
 
-func TestRemoveAurasWithInterruptFlags_NoCancelNonChanneling(t *testing.T) {
+func TestRemoveAurasWithInterruptFlags_NoCancelWithoutFlag(t *testing.T) {
 	u, _ := newTestUnitWithEngine(1, 1000)
 
+	// ChannelInterruptFlags 为空，不应被取消
 	info := &spellcore.SpellInfo{
-		Name:           "preparing",
-		InterruptFlags: spellcore.InterruptMovement,
+		Name:                  "preparing",
+		ChannelInterruptFlags: spellcore.AuraInterruptNone,
 	}
 	s := spellcore.NewSpell(1, info, u, 0)
 	s.State = spellcore.StatePreparing
@@ -420,7 +421,33 @@ func TestRemoveAurasWithInterruptFlags_NoCancelNonChanneling(t *testing.T) {
 	u.RemoveAurasWithInterruptFlags(spellcore.AuraInterruptOnMovement)
 
 	if s.State == spellcore.StateFinished {
-		t.Fatal("non-channeling spell should not be cancelled")
+		t.Fatal("spell without ChannelInterruptFlags should not be cancelled")
+	}
+}
+
+func TestRemoveAurasWithInterruptFlags_ChannelingMatchesCorrectFlag(t *testing.T) {
+	u, _ := newTestUnitWithEngine(1, 1000)
+
+	// ChannelInterruptFlags 设置为 AuraInterruptOnDamage，不应被移动事件取消
+	info := &spellcore.SpellInfo{
+		Name:                  "channel",
+		ChannelInterruptFlags: spellcore.AuraInterruptOnDamage,
+	}
+	s := spellcore.NewSpell(1, info, u, 0)
+	s.State = spellcore.StateChanneling
+	u.AddActiveSpell(s)
+
+	u.RemoveAurasWithInterruptFlags(spellcore.AuraInterruptOnMovement)
+
+	if s.State == spellcore.StateFinished {
+		t.Fatal("spell with AuraInterruptOnDamage should not be cancelled by movement")
+	}
+
+	// 现在用正确的 flag 触发，应该被取消
+	u.RemoveAurasWithInterruptFlags(spellcore.AuraInterruptOnDamage)
+
+	if s.State != spellcore.StateFinished {
+		t.Fatal("spell with AuraInterruptOnDamage should be cancelled by damage")
 	}
 }
 
@@ -725,5 +752,177 @@ func TestUnit_StunAuraBlocksCastAndMove(t *testing.T) {
 
 	if !u.CanCast() {
 		t.Error("expected CanCast=true after stun removed")
+	}
+}
+
+func TestUnit_FearAuraBlocksCastingAndMove(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	fearAura := spellcore.NewAura(997, 2, 1, spellcore.AuraModFear, 3*time.Second)
+	me.auraMgr.ApplyAura(u, u, fearAura)
+
+	if u.CanCast() {
+		t.Error("expected CanCast=false after fear")
+	}
+	if u.Entity.CanMove() {
+		t.Error("expected CanMove=false after fear")
+	}
+
+	me.auraMgr.RemoveAuraFromHosts(fearAura, u, u, spellcore.RemoveByExpire)
+
+	if !u.CanCast() {
+		t.Error("expected CanCast=true after fear removed")
+	}
+}
+
+func TestUnit_ConfuseAuraBlocksCasting(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	confuseAura := spellcore.NewAura(996, 2, 1, spellcore.AuraModConfuse, 3*time.Second)
+	me.auraMgr.ApplyAura(u, u, confuseAura)
+
+	if u.CanCast() {
+		t.Error("expected CanCast=false after confuse")
+	}
+
+	me.auraMgr.RemoveAuraFromHosts(confuseAura, u, u, spellcore.RemoveByExpire)
+
+	if !u.CanCast() {
+		t.Error("expected CanCast=true after confuse removed")
+	}
+}
+
+func TestCCStateReevaluation_DualStunRemainOne(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	stun1 := spellcore.NewAura(100, 2, 1, spellcore.AuraModStun, 5*time.Second)
+	stun2 := spellcore.NewAura(101, 2, 1, spellcore.AuraModStun, 5*time.Second)
+	me.auraMgr.ApplyAura(u, u, stun1)
+	me.auraMgr.ApplyAura(u, u, stun2)
+
+	if u.CanCast() {
+		t.Error("expected CanCast=false with two stun auras")
+	}
+
+	// 移除第一个 stun，state 应仍为 stunned（第二个 stun 仍生效）
+	me.auraMgr.RemoveAuraFromHosts(stun1, u, u, spellcore.RemoveByDispel)
+
+	if u.CanCast() {
+		t.Error("expected CanCast=false after removing one of two stun auras")
+	}
+}
+
+func TestCCStateReevaluation_AllStunsRemoved(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	stun1 := spellcore.NewAura(100, 2, 1, spellcore.AuraModStun, 5*time.Second)
+	stun2 := spellcore.NewAura(101, 2, 1, spellcore.AuraModStun, 5*time.Second)
+	me.auraMgr.ApplyAura(u, u, stun1)
+	me.auraMgr.ApplyAura(u, u, stun2)
+
+	me.auraMgr.RemoveAuraFromHosts(stun1, u, u, spellcore.RemoveByDispel)
+	me.auraMgr.RemoveAuraFromHosts(stun2, u, u, spellcore.RemoveByDispel)
+
+	if !u.CanCast() {
+		t.Error("expected CanCast=true after all stun auras removed")
+	}
+}
+
+func TestStunCancelsPreparingSpell(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	// 3s 施法中的法术
+	info := &spellcore.SpellInfo{Name: "fireball", CastTime: 3000}
+	s := spellcore.NewSpell(1, info, u, 0)
+	s.State = spellcore.StatePreparing
+	u.AddActiveSpell(s)
+
+	// 施加眩晕 aura
+	stunAura := spellcore.NewAura(200, 2, 1, spellcore.AuraModStun, 3*time.Second)
+	me.auraMgr.ApplyAura(u, u, stunAura)
+
+	if s.State != spellcore.StateFinished {
+		t.Fatal("preparing spell should be cancelled when stun aura applied")
+	}
+}
+
+func TestStunCancelsChannelingSpell(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	info := &spellcore.SpellInfo{Name: "channel"}
+	s := spellcore.NewSpell(1, info, u, 0)
+	s.State = spellcore.StateChanneling
+	u.AddActiveSpell(s)
+
+	stunAura := spellcore.NewAura(200, 2, 1, spellcore.AuraModStun, 3*time.Second)
+	me.auraMgr.ApplyAura(u, u, stunAura)
+
+	if s.State != spellcore.StateFinished {
+		t.Fatal("channeling spell should be cancelled when stun aura applied")
+	}
+}
+
+func TestSilenceOnlyCancelsMatchingSpells(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	// 一个 PreventionType=Silence 的法术
+	infoSilence := &spellcore.SpellInfo{
+		Name:           "arcane-missiles",
+		PreventionType: spellcore.PreventSilence,
+	}
+	sSilence := spellcore.NewSpell(1, infoSilence, u, 0)
+	sSilence.State = spellcore.StateChanneling
+	u.AddActiveSpell(sSilence)
+
+	// 一个 PreventionType=None 的法术
+	infoNone := &spellcore.SpellInfo{Name: "physical-channel"}
+	sNone := spellcore.NewSpell(2, infoNone, u, 0)
+	sNone.State = spellcore.StateChanneling
+	u.AddActiveSpell(sNone)
+
+	silenceAura := spellcore.NewAura(300, 2, 1, spellcore.AuraModSilence, 5*time.Second)
+	me.auraMgr.ApplyAura(u, u, silenceAura)
+
+	if sSilence.State != spellcore.StateFinished {
+		t.Fatal("silence-prevention spell should be cancelled by silence aura")
+	}
+	if sNone.State == spellcore.StateFinished {
+		t.Fatal("non-silence-prevention spell should NOT be cancelled by silence aura")
+	}
+}
+
+func TestFearCancelsAllSpells(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	info := &spellcore.SpellInfo{Name: "cast"}
+	s := spellcore.NewSpell(1, info, u, 0)
+	s.State = spellcore.StatePreparing
+	u.AddActiveSpell(s)
+
+	fearAura := spellcore.NewAura(400, 2, 1, spellcore.AuraModFear, 3*time.Second)
+	me.auraMgr.ApplyAura(u, u, fearAura)
+
+	if s.State != spellcore.StateFinished {
+		t.Fatal("preparing spell should be cancelled when fear aura applied")
+	}
+}
+
+func TestStunDoesNotRemoveExistingAuras(t *testing.T) {
+	u, me := newTestUnitWithEngine(1, 1000)
+
+	// 先施加一个 DoT aura
+	dotAura := spellcore.NewAura(500, 2, 1, spellcore.AuraPeriodicDamage, 10*time.Second)
+	me.auraMgr.ApplyAura(u, u, dotAura)
+
+	if len(u.GetOwnedAuras()) == 0 {
+		t.Fatal("DoT aura should be applied")
+	}
+
+	// 施加眩晕 — 眩晕不应移除已有 aura
+	stunAura := spellcore.NewAura(200, 2, 1, spellcore.AuraModStun, 3*time.Second)
+	me.auraMgr.ApplyAura(u, u, stunAura)
+
+	if len(u.GetOwnedAuras()) != 2 {
+		t.Fatalf("expected 2 owned auras (dot + stun), got %d", len(u.GetOwnedAuras()))
 	}
 }

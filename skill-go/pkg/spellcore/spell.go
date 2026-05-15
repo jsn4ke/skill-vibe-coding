@@ -38,6 +38,9 @@ const (
 	CastFailedTargetInvalid                         // 目标无效
 	CastFailedAuraBounced                           // 光环被弹回
 	CastFailedCantDoRightNow                        // 当前无法执行
+	CastFailedFeared                                // 恐惧中无法施法
+	CastFailedConfused                              // 迷惑中无法施法
+	CastFailedPacified                              // 安抚中无法施法
 )
 
 // EffectHandleMode 表示效果处理的阶段
@@ -103,6 +106,23 @@ type Spell struct {
 	launchHandled         bool // LaunchPhase 是否已执行，对齐 TC 的 m_launchHandled
 }
 
+// CasterCCState 是 CC 状态位掩码，用于 Caster 接口的 GetCCState() 方法。
+// 值与 entity.UnitState 对应，由 unit 包在实现中映射。
+type CasterCCState uint32
+
+const (
+	CCStunned  CasterCCState = 1 << iota // 昏迷
+	CCSilenced                           // 沉默
+	CCPacified                           // 安抚
+	CCConfused                           // 迷惑
+	CCFeared                             // 恐惧
+)
+
+// Has 检查是否包含指定 CC 状态标志。
+func (s CasterCCState) Has(flag CasterCCState) bool {
+	return s&flag != 0
+}
+
 // Caster 是施法者接口，对齐 TC 的 Unit 施法相关方法
 type Caster interface {
 	GetID() uint64
@@ -114,6 +134,7 @@ type Caster interface {
 	ModifyPower(pt uint8, amount float64) bool
 	IsMoving() bool
 	GetHistory() *History
+	GetCCState() CasterCCState
 }
 
 // Position 是位置接口
@@ -558,8 +579,26 @@ func (s *Spell) CheckCast(strict bool) SpellCastResult {
 	if !s.Caster.IsAlive() && !s.Info.HasAttribute(AttrAllowWhileDead) {
 		return CastFailedCasterDead
 	}
-	if !s.Caster.CanCast() {
-		return CastFailedStunned
+
+	// CC 阻止检查，对齐 TC 的 Spell::CheckCast CC prevention 逻辑。
+	// 眩晕/恐惧/迷惑无条件阻止所有法术；沉默/安抚按 PreventionType 精确匹配。
+	if s.CastFlags&TriggeredIgnoreCasterAuraState == 0 {
+		cc := s.Caster.GetCCState()
+		if cc.Has(CCStunned) {
+			return CastFailedStunned
+		}
+		if cc.Has(CCFeared) {
+			return CastFailedFeared
+		}
+		if cc.Has(CCConfused) {
+			return CastFailedConfused
+		}
+		if cc.Has(CCSilenced) && s.Info.PreventionType&PreventSilence != 0 {
+			return CastFailedSilenced
+		}
+		if cc.Has(CCPacified) && s.Info.PreventionType&PreventPacify != 0 {
+			return CastFailedPacified
+		}
 	}
 
 	// GCD 检查，对齐 TC 的 Spell::CheckCast → CheckGlobalCooldown
@@ -582,8 +621,6 @@ func (s *Spell) CheckCast(strict bool) SpellCastResult {
 
 	// 能量检查，对齐 TC 的 Spell::CheckCast → CheckPower
 	if s.CastFlags&TriggeredIgnorePower == 0 && s.Info.PowerCost > 0 {
-		// PowerType=0 对应 Mana，但 GetStatValue 使用 stat.StatType 映射
-		// Unit.ModifyPower 做了 PowerType→StatType 映射，这里用相同的映射
 		statType := s.Info.PowerType
 		if statType == 0 {
 			statType = 2 // Mana 对应 StatType=2
@@ -594,11 +631,6 @@ func (s *Spell) CheckCast(strict bool) SpellCastResult {
 		}
 	}
 
-	if s.CastFlags&TriggeredIgnoreCasterAuraState == 0 {
-		if !s.Caster.CanCast() {
-			return CastFailedSilenced
-		}
-	}
 	return CastOK
 }
 

@@ -386,3 +386,49 @@ func TestSettlement_AuraModifiesStat(t *testing.T) {
 		t.Errorf("expected SpellPower to return to %.0f after expiry, got %.0f", spBefore, spExpired)
 	}
 }
+
+func TestDamageCancelsPreparingSpell(t *testing.T) {
+	eng, caster, target := createTestEngine()
+
+	// 目标正在施法一个有 InterruptDamageCancels 的法术
+	castInfo := &spellcore.SpellInfo{
+		ID:             400,
+		Name:           "LongCast",
+		CastTime:       3000,
+		InterruptFlags: spellcore.InterruptDamageCancels,
+	}
+	s := eng.CastSpell(target, castInfo, WithTarget(caster.ID()))
+	if s == nil || s.State != spellcore.StatePreparing {
+		t.Fatal("spell should be in preparing state")
+	}
+
+	// 对目标造成伤害
+	eng.CastSpell(caster, damageSpellInfo(), WithTarget(target.ID()))
+	eng.Simulate(200, 100)
+
+	if s.State != spellcore.StateFinished {
+		t.Fatal("preparing spell with InterruptDamageCancels should be cancelled when target takes damage")
+	}
+}
+
+func TestDamageNoCancelWithoutFlag(t *testing.T) {
+	eng, caster, target := createTestEngine()
+
+	// 目标正在施法一个没有 InterruptDamageCancels 的法术
+	castInfo := &spellcore.SpellInfo{
+		ID:       401,
+		Name:     "ToughCast",
+		CastTime: 3000,
+	}
+	s := eng.CastSpell(target, castInfo, WithTarget(caster.ID()))
+	if s == nil || s.State != spellcore.StatePreparing {
+		t.Fatal("spell should be in preparing state")
+	}
+
+	eng.CastSpell(caster, damageSpellInfo(), WithTarget(target.ID()))
+	eng.Simulate(200, 100)
+
+	if s.State == spellcore.StateFinished {
+		t.Fatal("spell without InterruptDamageCancels should NOT be cancelled by damage")
+	}
+}

@@ -93,11 +93,34 @@ func (u *Unit) CanCast() bool                  { return u.Entity.CanCast() }
 func (u *Unit) IsMoving() bool                 { return u.isMoving }
 func (u *Unit) GetHistory() *spellcore.History { return u.History }
 
+// GetCCState 返回施法者的 CC 状态位掩码，将 entity.UnitState 映射为 spellcore.CasterCCState。
+func (u *Unit) GetCCState() spellcore.CasterCCState {
+	var state spellcore.CasterCCState
+	if u.Entity.State.Has(entity.StateStunned) {
+		state |= spellcore.CCStunned
+	}
+	if u.Entity.State.Has(entity.StateSilenced) {
+		state |= spellcore.CCSilenced
+	}
+	if u.Entity.State.Has(entity.StatePacified) {
+		state |= spellcore.CCPacified
+	}
+	if u.Entity.State.Has(entity.StateConfused) {
+		state |= spellcore.CCConfused
+	}
+	if u.Entity.State.Has(entity.StateFeared) {
+		state |= spellcore.CCFeared
+	}
+	return state
+}
+
 // ApplyAuraEffects 在光环施加时应用属性修改和 CC 状态，对齐 TC 的 Aura::Apply。
+// CC 光环施加时立即中断匹配的活跃法术，对齐 TC 的 SetControlled → CastStop。
 func (u *Unit) ApplyAuraEffects(a *spellcore.Aura) {
 	// 检查光环主类型（直接通过 NewAura 创建的光环可能没有 Effects）
 	if flag := ccStateFlag(a.AuraType); flag != 0 {
 		u.Entity.State = u.Entity.State.Set(flag)
+		u.interruptSpellsOnCCApply(a.AuraType)
 	}
 
 	for _, eff := range a.Effects {
@@ -108,14 +131,18 @@ func (u *Unit) ApplyAuraEffects(a *spellcore.Aura) {
 		}
 		if flag := ccStateFlag(eff.AuraType); flag != 0 {
 			u.Entity.State = u.Entity.State.Set(flag)
+			u.interruptSpellsOnCCApply(eff.AuraType)
 		}
 	}
 }
 
 // RemoveAuraEffects 在光环移除时撤销属性修改和 CC 状态，对齐 TC 的 Aura::Remove。
+// CC 状态清除前检查是否仍有同类型 aura 生效，对齐 TC 的 SetControlled(false) 重评估。
 func (u *Unit) RemoveAuraEffects(a *spellcore.Aura) {
 	if flag := ccStateFlag(a.AuraType); flag != 0 {
-		u.Entity.State = u.Entity.State.Clear(flag)
+		if !u.hasAuraTypeActive(a.AuraType, a) {
+			u.Entity.State = u.Entity.State.Clear(flag)
+		}
 	}
 
 	for _, eff := range a.Effects {
@@ -125,7 +152,9 @@ func (u *Unit) RemoveAuraEffects(a *spellcore.Aura) {
 			u.Stats.RemoveModifierBySource(*st, source)
 		}
 		if flag := ccStateFlag(eff.AuraType); flag != 0 {
-			u.Entity.State = u.Entity.State.Clear(flag)
+			if !u.hasAuraTypeActive(eff.AuraType, a) {
+				u.Entity.State = u.Entity.State.Clear(flag)
+			}
 		}
 	}
 }
@@ -145,11 +174,13 @@ func (u *Unit) ApplyAuraEffectsForApp(app *spellcore.AuraApplication) {
 		}
 		if flag := ccStateFlag(eff.AuraType); flag != 0 {
 			u.Entity.State = u.Entity.State.Set(flag)
+			u.interruptSpellsOnCCApply(eff.AuraType)
 		}
 	}
 }
 
 // RemoveAuraEffectsForApp uses AuraApplication effect mask to remove aura effects.
+// CC 状态清除前检查是否仍有同类型 aura 生效。
 func (u *Unit) RemoveAuraEffectsForApp(app *spellcore.AuraApplication) {
 	a := app.Base
 	for i := range a.Effects {
@@ -163,7 +194,64 @@ func (u *Unit) RemoveAuraEffectsForApp(app *spellcore.AuraApplication) {
 			u.Stats.RemoveModifierBySource(*st, source)
 		}
 		if flag := ccStateFlag(eff.AuraType); flag != 0 {
-			u.Entity.State = u.Entity.State.Clear(flag)
+			if !u.hasAuraTypeActive(eff.AuraType, a) {
+				u.Entity.State = u.Entity.State.Clear(flag)
+			}
+		}
+	}
+}
+
+// hasAuraTypeActive 检查目标是否仍有指定 AuraType 的光环生效中（排除指定 aura）。
+// 用于 CC 移除时的状态重评估，对齐 TC 的 SetControlled(false) 检查剩余 aura。
+func (u *Unit) hasAuraTypeActive(auraType spellcore.AuraType, exclude *spellcore.Aura) bool {
+	for _, app := range u.appliedAuraApps {
+		if app.Base == exclude {
+			continue
+		}
+		if app.Base.AuraType == auraType {
+			return true
+		}
+		for _, eff := range app.Base.Effects {
+			if eff.AuraType == auraType {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// interruptSpellsOnCCApply 在 CC 光环施加时中断匹配的活跃法术，
+// 对齐 TC 的 SetControlled → CastStop 和 InterruptSpellsWithPreventionTypeOnAuraApply。
+func (u *Unit) interruptSpellsOnCCApply(auraType spellcore.AuraType) {
+	switch auraType {
+	case spellcore.AuraModStun, spellcore.AuraModFear, spellcore.AuraModConfuse:
+		// 完全丧失控制 — 中断所有活跃法术
+		u.cancelAllActiveSpells()
+	case spellcore.AuraModSilence:
+		// 选择性中断 — 只中断 PreventionType & Silence 的法术
+		u.cancelActiveSpellsByPrevention(spellcore.PreventSilence)
+	case spellcore.AuraModPacify:
+		// 选择性中断 — 只中断 PreventionType & Pacify 的法术
+		u.cancelActiveSpellsByPrevention(spellcore.PreventPacify)
+	}
+}
+
+// cancelAllActiveSpells 取消所有 Preparing/Channeling 法术，对齐 TC 的 CastStop()。
+func (u *Unit) cancelAllActiveSpells() {
+	for _, s := range u.activeSpells {
+		if s.State == spellcore.StatePreparing || s.State == spellcore.StateChanneling {
+			s.Cancel()
+		}
+	}
+}
+
+// cancelActiveSpellsByPrevention 取消 PreventionType 匹配的活跃法术，
+// 对齐 TC 的 InterruptSpellsWithPreventionTypeOnAuraApply。
+func (u *Unit) cancelActiveSpellsByPrevention(pt spellcore.SpellPreventionType) {
+	for _, s := range u.activeSpells {
+		if (s.State == spellcore.StatePreparing || s.State == spellcore.StateChanneling) &&
+			s.Info.PreventionType&pt != 0 {
+			s.Cancel()
 		}
 	}
 }
@@ -432,6 +520,18 @@ func (u *Unit) FindAppliedAuraApp(spellID spellcore.SpellID, casterID uint64) *s
 	return nil
 }
 
+// InterruptSpellsOnDamage 在单位受到伤害时检查活跃法术是否需要取消，
+// 对齐 TC 的 Spell::update 受伤检查（InterruptDamageCancels 标志）。
+func (u *Unit) InterruptSpellsOnDamage() {
+	for _, s := range u.activeSpells {
+		if s.State == spellcore.StatePreparing || s.State == spellcore.StateChanneling {
+			if s.Info.InterruptFlags.HasFlag(spellcore.InterruptDamageCancels) {
+				s.Cancel()
+			}
+		}
+	}
+}
+
 // RemoveAurasWithInterruptFlags 移除所有 InterruptFlags 匹配指定标志的拥有光环，
 // 使用 RemoveByInterrupt 模式。同时检查当前引导法术是否匹配打断标志。
 // 对齐 TC 的 Unit::RemoveAurasWithInterruptFlags。
@@ -481,9 +581,10 @@ func (u *Unit) RemoveAurasWithInterruptFlags(flag spellcore.SpellAuraInterruptFl
 		}
 	}
 
-	// 检查引导法术是否匹配引导打断标志
+	// 检查活跃法术是否匹配 ChannelInterruptFlags，对齐 TC 的 channel + preparing 中断。
 	for _, s := range u.activeSpells {
-		if s.State == spellcore.StateChanneling && s.Info.InterruptFlags.HasFlag(spellcore.InterruptMovement) {
+		if (s.State == spellcore.StateChanneling || s.State == spellcore.StatePreparing) &&
+			s.Info.ChannelInterruptFlags.HasFlag(flag) {
 			s.Cancel()
 			break
 		}

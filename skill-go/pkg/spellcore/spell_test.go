@@ -44,12 +44,13 @@ func newTestUnit(id uint64) *testUnit {
 	return u
 }
 
-func (u *testUnit) GetID() uint64                   { return u.id }
-func (u *testUnit) IsAlive() bool                   { return u.alive }
-func (u *testUnit) CanCast() bool                   { return u.canCast }
-func (u *testUnit) GetPosition() spellcore.Position { return u.pos }
-func (u *testUnit) IsMoving() bool                  { return u.moving }
-func (u *testUnit) GetHistory() *spellcore.History  { return nil }
+func (u *testUnit) GetID() uint64                       { return u.id }
+func (u *testUnit) IsAlive() bool                       { return u.alive }
+func (u *testUnit) CanCast() bool                       { return u.canCast }
+func (u *testUnit) GetPosition() spellcore.Position     { return u.pos }
+func (u *testUnit) IsMoving() bool                      { return u.moving }
+func (u *testUnit) GetHistory() *spellcore.History      { return nil }
+func (u *testUnit) GetCCState() spellcore.CasterCCState { return 0 }
 func (u *testUnit) ModifyPower(_ uint8, amt float64) bool {
 	u.power += amt
 	return true
