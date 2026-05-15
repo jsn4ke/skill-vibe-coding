@@ -6,12 +6,12 @@ import "skill-go/pkg/targeting"
 type SpellAttribute uint32
 
 const (
-	AttrNone    SpellAttribute = 0
-	AttrPassive SpellAttribute = 1 << iota
-	AttrAllowWhileDead
-	_ // 已移除: AttrBreakOnMove — 使用 InterruptFlags 替代
-	AttrChanneled
-	AttrInstant
+	AttrNone           SpellAttribute = 0
+	AttrPassive        SpellAttribute = 1 << iota // 被动法术
+	AttrAllowWhileDead                            // 允许死亡状态下施放
+	_                                             // 已移除: AttrBreakOnMove — 使用 InterruptFlags 替代
+	AttrChanneled                                 // 引导法术
+	AttrInstant                                   // 瞬发法术
 )
 
 // SpellInterruptFlags 控制施法/引导期间的打断条件，对齐 TC 的 SpellInterruptFlags 位掩码。
@@ -95,22 +95,22 @@ type SpellEffectInfo struct {
 type EffectType uint16
 
 const (
-	EffectNone EffectType = iota
-	EffectSchoolDamage
-	EffectHeal
-	EffectApplyAura
-	EffectEnergize
-	EffectSummon
-	EffectTeleportUnits
-	EffectWeaponDamage
-	EffectTriggerSpell
-	EffectDummy
-	EffectHealPct
-	EffectEnergizePct
-	EffectLeap
-	EffectKnockBack
-	EffectCharge
-	EffectDispel
+	EffectNone          EffectType = iota // 无效果
+	EffectSchoolDamage                    // 学校伤害
+	EffectHeal                            // 治疗
+	EffectApplyAura                       // 施加光环
+	EffectEnergize                        // 恢复能量
+	EffectSummon                          // 召唤
+	EffectTeleportUnits                   // 传送
+	EffectWeaponDamage                    // 武器伤害
+	EffectTriggerSpell                    // 触发法术
+	EffectDummy                           // 占位效果（脚本钩子）
+	EffectHealPct                         // 百分比治疗
+	EffectEnergizePct                     // 百分比恢复能量
+	EffectLeap                            // 跳跃
+	EffectKnockBack                       // 击退
+	EffectCharge                          // 冲锋
+	EffectDispel                          // 驱散
 )
 
 // ImplicitTarget 表示隐式目标类型的枚举，使用 TC 原始编号。

@@ -40,57 +40,57 @@ type AuraHost interface {
 type AuraType uint16
 
 const (
-	AuraNone AuraType = iota
-	AuraPeriodicDamage
-	AuraPeriodicHeal
-	AuraModStat
-	AuraModStun
-	AuraModRoot
-	AuraModSilence
-	AuraModFear
-	AuraModConfuse
-	AuraModCharm
-	AuraModSpeed
-	AuraModAttackPower
-	AuraModSpellPower
-	AuraModResistance
-	AuraModCritChance
-	AuraModHaste
-	AuraModPacify
-	AuraModStealth
-	AuraPeriodicTriggerSpell
-	AuraProcTriggerSpell
-	AuraProcTriggerDamage
-	AuraMounted
-	AuraSchoolImmunity
-	AuraMechanicImmunity
-	AuraDamageImmunity
-	AuraModIncreaseSpeed
-	AuraModDecreaseSpeed
+	AuraNone                 AuraType = iota // 无光环
+	AuraPeriodicDamage                       // 周期性伤害（DoT）
+	AuraPeriodicHeal                         // 周期性治疗（HoT）
+	AuraModStat                              // 修改属性
+	AuraModStun                              // 昏迷
+	AuraModRoot                              // 定身
+	AuraModSilence                           // 沉默
+	AuraModFear                              // 恐惧
+	AuraModConfuse                           // 迷惑
+	AuraModCharm                             // 魅惑
+	AuraModSpeed                             // 修改移动速度
+	AuraModAttackPower                       // 修改攻击强度
+	AuraModSpellPower                        // 修改法术强度
+	AuraModResistance                        // 修改抗性
+	AuraModCritChance                        // 修改暴击率
+	AuraModHaste                             // 修改急速
+	AuraModPacify                            // 平静（无法攻击）
+	AuraModStealth                           // 潜行
+	AuraPeriodicTriggerSpell                 // 周期触发法术
+	AuraProcTriggerSpell                     // 触发器触发法术
+	AuraProcTriggerDamage                    // 触发器触发伤害
+	AuraMounted                              // 骑乘
+	AuraSchoolImmunity                       // 学校免疫
+	AuraMechanicImmunity                     // 机制免疫
+	AuraDamageImmunity                       // 伤害免疫
+	AuraModIncreaseSpeed                     // 增加移动速度
+	AuraModDecreaseSpeed                     // 降低移动速度（减速）
 )
 
 // RemoveMode 表示光环移除的原因。
 type RemoveMode uint8
 
 const (
-	RemoveNone RemoveMode = iota
-	RemoveByDefault
-	RemoveByCancel
-	RemoveByExpire
-	RemoveByDeath
-	RemoveByDispel
-	RemoveByStack
-	RemoveByInterrupt
+	RemoveNone        RemoveMode = iota // 无移除原因
+	RemoveByDefault                     // 默认移除（新光环覆盖）
+	RemoveByCancel                      // 施法者主动取消
+	RemoveByExpire                      // 自然过期
+	RemoveByDeath                       // 承载者死亡
+	RemoveByDispel                      // 被驱散
+	RemoveByStack                       // 叠加替换
+	RemoveByInterrupt                   // 被打断
 )
 
 // StackRule 表示光环叠加规则。
 type StackRule uint8
 
 const (
-	StackNone StackRule = iota
-	StackRefresh
-	StackAddStack
-	StackReplace
+	StackNone     StackRule = iota // 无叠加规则
+	StackRefresh                   // 刷新持续时间
+	StackAddStack                  // 增加叠加层数
+	StackReplace                   // 替换（移除旧的，应用新的）
 )
 
 // Aura 表示一个光环实例。

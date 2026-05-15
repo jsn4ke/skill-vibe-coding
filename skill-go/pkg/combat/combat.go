@@ -25,13 +25,13 @@ type SettlementContext struct {
 type DamageSchool uint8
 
 const (
-	SchoolPhysical DamageSchool = iota
-	SchoolHoly
-	SchoolFire
-	SchoolNature
-	SchoolFrost
-	SchoolShadow
-	SchoolArcane
+	SchoolPhysical DamageSchool = iota // 物理
+	SchoolHoly                         // 神圣
+	SchoolFire                         // 火焰
+	SchoolNature                       // 自然
+	SchoolFrost                        // 冰霜
+	SchoolShadow                       // 暗影
+	SchoolArcane                       // 奥术
 )
 
 // AttackRollResult 保存命中判定的完整结果。

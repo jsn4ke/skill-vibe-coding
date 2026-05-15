@@ -47,18 +47,18 @@ func (p Position) IsInFront(other Position) bool {
 type UnitState uint32
 
 const (
-	StateNone  UnitState = 0
-	StateAlive UnitState = 1 << iota
-	StateDead
-	StateInCombat
-	StateStunned
-	StateRooted
-	StateSilenced
-	StatePacified
-	StateCharmed
-	StateConfused
-	StateFeared
-	StateStealthed
+	StateNone      UnitState = 0
+	StateAlive     UnitState = 1 << iota // 存活
+	StateDead                            // 死亡
+	StateInCombat                        // 战斗中
+	StateStunned                         // 昏迷
+	StateRooted                          // 定身
+	StateSilenced                        // 沉默
+	StatePacified                        // 平静（无法攻击）
+	StateCharmed                         // 魅惑
+	StateConfused                        // 迷惑
+	StateFeared                          // 恐惧
+	StateStealthed                       // 潜行
 )
 
 // Has 检查是否包含指定状态标志。
@@ -80,11 +80,11 @@ func (s UnitState) Clear(flag UnitState) UnitState {
 type EntityType uint8
 
 const (
-	TypeNone EntityType = iota
-	TypePlayer
-	TypeCreature
-	TypePet
-	TypeGameObject
+	TypeNone       EntityType = iota // 无类型
+	TypePlayer                       // 玩家
+	TypeCreature                     // 生物（NPC）
+	TypePet                          // 宠物
+	TypeGameObject                   // 游戏对象
 )
 
 // Entity 是游戏世界中的基础实体，包含位置、状态和等级信息。

@@ -9,43 +9,43 @@ import (
 type ProcFlag uint32
 
 const (
-	FlagNone ProcFlag = 0
-	FlagKill ProcFlag = 1 << iota
-	FlagMeleeSwing
-	FlagSpellDamageDealt
-	FlagSpellDamageTaken
-	FlagSpellHealDealt
-	FlagSpellHealTaken
-	FlagPeriodicDamageDealt
-	FlagPeriodicDamageTaken
-	FlagPeriodicHealDealt
-	FlagPeriodicHealTaken
-	FlagSpellCast
-	FlagSpellHit
-	FlagDeath
-	FlagCombatEnter
-	FlagAttackSwing
+	FlagNone                ProcFlag = 0
+	FlagKill                ProcFlag = 1 << iota // 击杀
+	FlagMeleeSwing                               // 近战挥击
+	FlagSpellDamageDealt                         // 施加法术伤害
+	FlagSpellDamageTaken                         // 承受法术伤害
+	FlagSpellHealDealt                           // 施加法术治疗
+	FlagSpellHealTaken                           // 承受法术治疗
+	FlagPeriodicDamageDealt                      // 施加周期伤害
+	FlagPeriodicDamageTaken                      // 承受周期伤害
+	FlagPeriodicHealDealt                        // 施加周期治疗
+	FlagPeriodicHealTaken                        // 承受周期治疗
+	FlagSpellCast                                // 法术施放
+	FlagSpellHit                                 // 法术命中
+	FlagDeath                                    // 死亡
+	FlagCombatEnter                              // 进入战斗
+	FlagAttackSwing                              // 攻击挥击
 )
 
 // SpellTypeMask 表示法术类型的位掩码。
 type SpellTypeMask uint8
 
 const (
-	TypeMaskNone   SpellTypeMask = 0
-	TypeMaskDamage SpellTypeMask = 1 << iota
-	TypeMaskHeal
-	TypeMaskNonDmgHeal
-	TypeMaskAll SpellTypeMask = TypeMaskDamage | TypeMaskHeal | TypeMaskNonDmgHeal
+	TypeMaskNone       SpellTypeMask = 0
+	TypeMaskDamage     SpellTypeMask = 1 << iota                                          // 伤害类法术
+	TypeMaskHeal                                                                          // 治疗类法术
+	TypeMaskNonDmgHeal                                                                    // 非伤害非治疗类法术
+	TypeMaskAll        SpellTypeMask = TypeMaskDamage | TypeMaskHeal | TypeMaskNonDmgHeal // 全部类型
 )
 
 // SpellPhaseMask 表示法术阶段的位掩码。
 type SpellPhaseMask uint8
 
 const (
-	PhaseNone SpellPhaseMask = 0
-	PhaseCast SpellPhaseMask = 1 << iota
-	PhaseHit
-	PhaseFinish
+	PhaseNone   SpellPhaseMask = 0
+	PhaseCast   SpellPhaseMask = 1 << iota // 施法阶段
+	PhaseHit                               // 命中阶段
+	PhaseFinish                            // 完成阶段
 )
 
 // ProcHitMask 表示命中结果的位掩码，用于过滤触发条件。
@@ -54,10 +54,10 @@ type ProcHitMask uint8
 
 const (
 	ProcHitNone   ProcHitMask = 0
-	ProcHitNormal ProcHitMask = 1 << iota
-	ProcHitCrit
-	ProcHitMiss
-	ProcHitImmune
+	ProcHitNormal ProcHitMask = 1 << iota // 普通命中
+	ProcHitCrit                           // 暴击
+	ProcHitMiss                           // 未命中
+	ProcHitImmune                         // 免疫
 )
 
 // Entry 表示一个触发器条目，对齐 TC 的 ProcTriggerEntry。

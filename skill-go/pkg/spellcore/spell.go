@@ -14,30 +14,30 @@ type SpellID uint32
 type SpellState uint8
 
 const (
-	StateNull SpellState = iota
-	StatePreparing
-	StateLaunched
-	StateChanneling
-	StateFinished
+	StateNull       SpellState = iota // 初始状态
+	StatePreparing                    // 施法准备（读条中）
+	StateLaunched                     // 已发射（弹道飞行中）
+	StateChanneling                   // 引导中
+	StateFinished                     // 已完成
 )
 
 // SpellCastResult 表示施法结果的枚举
 type SpellCastResult uint16
 
 const (
-	CastOK SpellCastResult = iota
-	CastFailedCasterDead
-	CastFailedNotReady
-	CastFailedNoPower
-	CastFailedOutOfRange
-	CastFailedInterrupted
-	CastFailedStunned
-	CastFailedSilenced
-	CastFailedRooted
-	CastFailedTargetDead
-	CastFailedTargetInvalid
-	CastFailedAuraBounced
-	CastFailedCantDoRightNow
+	CastOK                   SpellCastResult = iota // 施法成功
+	CastFailedCasterDead                            // 施法者已死亡
+	CastFailedNotReady                              // 冷却未就绪
+	CastFailedNoPower                               // 能量不足
+	CastFailedOutOfRange                            // 超出范围
+	CastFailedInterrupted                           // 被打断
+	CastFailedStunned                               // 昏迷中无法施法
+	CastFailedSilenced                              // 沉默中无法施法
+	CastFailedRooted                                // 定身中无法施法
+	CastFailedTargetDead                            // 目标已死亡
+	CastFailedTargetInvalid                         // 目标无效
+	CastFailedAuraBounced                           // 光环被弹回
+	CastFailedCantDoRightNow                        // 当前无法执行
 )
 
 // EffectHandleMode 表示效果处理的阶段

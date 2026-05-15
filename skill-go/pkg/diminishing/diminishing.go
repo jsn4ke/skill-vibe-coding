@@ -8,29 +8,29 @@ import (
 type Group uint8
 
 const (
-	GroupNone Group = iota
-	GroupStun
-	GroupFear
-	GroupRoot
-	GroupSilence
-	GroupCharm
-	GroupConfuse
-	GroupDisarm
-	GroupBanish
-	GroupKnockback
-	GroupPolymorph
-	GroupSlow
+	GroupNone      Group = iota // 无递减分组
+	GroupStun                   // 昏迷
+	GroupFear                   // 恐惧
+	GroupRoot                   // 定身
+	GroupSilence                // 沉默
+	GroupCharm                  // 魅惑
+	GroupConfuse                // 迷惑
+	GroupDisarm                 // 缴械
+	GroupBanish                 // 放逐
+	GroupKnockback              // 击退
+	GroupPolymorph              // 变形
+	GroupSlow                   // 减速
 )
 
 // ReturnType 表示递减返回的结果类型。
 type ReturnType uint8
 
 const (
-	ReturnNone ReturnType = iota
-	ReturnStandard
-	ReturnHalf
-	ReturnQuarter
-	ReturnImmune
+	ReturnNone     ReturnType = iota // 无递减效果
+	ReturnStandard                   // 全时长（标准）
+	ReturnHalf                       // 半时长
+	ReturnQuarter                    // 四分之一时长
+	ReturnImmune                     // 免疫
 )
 
 // Level 定义一个递减分组的规则，包含最大层数和持续时间上限。
