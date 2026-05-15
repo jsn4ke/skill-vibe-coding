@@ -586,7 +586,6 @@ func (u *Unit) RemoveAurasWithInterruptFlags(flag spellcore.SpellAuraInterruptFl
 		if (s.State == spellcore.StateChanneling || s.State == spellcore.StatePreparing) &&
 			s.Info.ChannelInterruptFlags.HasFlag(flag) {
 			s.Cancel()
-			break
 		}
 	}
 }
